@@ -1,0 +1,12 @@
+/closeview
+PLAN.md
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+dist/
+tmp/
+node_modules/
+.playwright-cli/

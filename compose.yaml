@@ -1,0 +1,15 @@
+services:
+  closeview:
+    build: .
+    container_name: closeview
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      CLOSEVIEW_CODEX_HOME: /sessions/codex
+      CLOSEVIEW_CLAUDE_HOME: /sessions/claude
+      CLOSEVIEW_OPENCODE_DB: /sessions/opencode/opencode.db
+    volumes:
+      - ${CODEX_HOME:-/home/dylan/.codex}:/sessions/codex
+      - ${CLAUDE_HOME:-/home/dylan/.claude}:/sessions/claude
+      - ${OPENCODE_HOME:-/home/dylan/.local/share/opencode}:/sessions/opencode
+    command: ["serve", "--host", "${CLOSEVIEW_HOST:-127.0.0.1}", "--port", "3434"]
