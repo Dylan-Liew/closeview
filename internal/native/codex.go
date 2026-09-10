@@ -231,6 +231,17 @@ func parseCodexRollout(path string, includeContent bool) (codexParsed, error) {
 		case "response_item":
 			parseCodexResponse(envelope, includeContent, currentModel, &detail, pendingTools, &firstPrompt)
 		case "event_msg":
+			if includeContent {
+				var event struct {
+					Type string `json:"type"`
+					Info *struct {
+						Total *TokenUsage `json:"total_token_usage"`
+					} `json:"info"`
+				}
+				if json.Unmarshal(envelope.Payload, &event) == nil && event.Type == "token_count" && event.Info != nil && event.Info.Total != nil {
+					detail.Usage = event.Info.Total
+				}
+			}
 			if message, ok := codexFallbackMessage(envelope, currentModel); ok {
 				fallback = append(fallback, message)
 			}

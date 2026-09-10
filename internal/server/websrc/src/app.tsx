@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   IconAlertCircle,
   IconBrandOpenai,
@@ -50,6 +50,7 @@ export function App() {
   const [mobilePickerOpen, setMobilePickerOpen] = useState(() => !new URLSearchParams(location.search).get('session'))
   const [error, setError] = useState('')
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(() => new Set())
+  const [detailRevision, setDetailRevision] = useState(0)
 
   const loadCatalog = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true)
@@ -59,6 +60,7 @@ export function App() {
       const data = await response.json()
       if (!response.ok) throw new Error(data.error || 'Could not load sessions')
       setCatalog({ sessions: data.sessions ?? [], sources: data.sources ?? [] })
+      if (isRefresh) setDetailRevision(value => value + 1)
       setError('')
       setActiveID(current => current || data.sessions?.[0]?.id || '')
     } catch (reason) {
@@ -97,7 +99,7 @@ export function App() {
       })
       .finally(() => { if (!controller.signal.aborted) setLoadingDetail(false) })
     return () => controller.abort()
-  }, [activeID])
+  }, [activeID, detailRevision])
 
   const visibleSessionForest = useMemo(() => {
     const normalized = query.trim().toLowerCase()
@@ -252,7 +254,7 @@ export function App() {
               onSelectParent={id => setActiveID(id)}
               onDelete={() => setDeleteOpen(true)}
             />
-            <Transcript detail={detail} />
+            <Transcript key={detail.session.id} detail={detail} />
           </>
         ) : (
           <div className="main-empty">
@@ -488,6 +490,34 @@ function sessionTreeContains(node: SessionNode, sessionID: string): boolean {
 }
 
 function Transcript({ detail }: { detail: SessionDetail }) {
+  const [search, setSearch] = useState('')
+  const [matchIndex, setMatchIndex] = useState(0)
+  const [showLatest, setShowLatest] = useState(false)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const term = search.trim().toLocaleLowerCase()
+  const matches = useMemo(() => term ? detail.messages.filter(message => message.content.toLocaleLowerCase().includes(term)) : [], [detail.messages, term])
+  const activeMatch = matches[matchIndex]?.id
+  useEffect(() => {
+    const element = scrollRef.current
+    if (element) setShowLatest(element.scrollHeight - element.scrollTop - element.clientHeight > 400)
+  }, [detail.messages])
+  useEffect(() => {
+    if (!activeMatch) return
+    const element = document.getElementById(activeMatch)
+    if (element instanceof HTMLDetailsElement) element.open = true
+    element?.scrollIntoView({ block: 'center', behavior: 'instant' })
+  }, [activeMatch])
+  const totals = useMemo(() => detail.messages.reduce((sum, message) => ({
+    input: sum.input + message.tokensInput,
+    output: sum.output + message.tokensOutput,
+    cached: sum.cached + message.tokensCacheRead,
+    written: sum.written + message.tokensCacheWrite,
+  }), { input: 0, output: 0, cached: 0, written: 0 }), [detail.messages])
+  const usage = detail.usage
+  const input = usage?.input_tokens ?? totals.input
+  const output = usage?.output_tokens ?? totals.output
+  const cached = usage?.cached_input_tokens ?? totals.cached
+  const recorded = input + output + cached + totals.written > 0
   const toolsByMessage = useMemo(() => {
     const grouped = new Map<string, ToolCall[]>()
     for (const tool of detail.toolCalls ?? []) grouped.set(tool.messageId, [...(grouped.get(tool.messageId) ?? []), tool])
@@ -495,23 +525,42 @@ function Transcript({ detail }: { detail: SessionDetail }) {
   }, [detail.toolCalls])
   const orphanTools = (detail.toolCalls ?? []).filter(tool => !tool.messageId || !detail.messages.some(message => message.id === tool.messageId))
   return (
-    <div className="transcript" id="transcript">
+    <div className="conversation">
+      <div className="conversation-toolbar">
+        <div className="conversation-search">
+          <IconSearch size={14} aria-hidden="true" />
+          <input aria-label="Find in conversation" placeholder="Find in conversation…" value={search} onChange={event => { setSearch(event.target.value); setMatchIndex(0) }} onKeyDown={event => {
+            if (event.key === 'Escape') setSearch('')
+            if (event.key === 'Enter' && matches.length) setMatchIndex(index => (index + (event.shiftKey ? matches.length - 1 : 1)) % matches.length)
+          }} />
+          {search && <><span aria-live="polite">{matches.length ? `${matchIndex + 1}/${matches.length}` : 'No matches'}</span><button aria-label="Next match" disabled={!matches.length} onClick={() => setMatchIndex(index => (index + 1) % matches.length)}><IconChevronDown size={16} /></button><button aria-label="Clear search" onClick={() => setSearch('')}><IconX size={14} /></button></>}
+        </div>
+        <div className="conversation-totals" aria-label="Recorded session token usage">
+          {recorded ? <><span>Input <b>{formatNumber(input)}</b></span><span>Output <b>{formatNumber(output)}</b></span>{cached > 0 && <span>Cache read <b>{formatNumber(cached)}</b></span>}{totals.written > 0 && <span>Cache write <b>{formatNumber(totals.written)}</b></span>}{usage && usage.reasoning_output_tokens > 0 && <span>Reasoning <b>{formatNumber(usage.reasoning_output_tokens)}</b></span>}</> : <span>Token usage not recorded</span>}
+        </div>
+      </div>
+    <div className="transcript" id="transcript" ref={scrollRef} onScroll={event => {
+      const element = event.currentTarget
+      setShowLatest(element.scrollHeight - element.scrollTop - element.clientHeight > 400)
+    }}>
       <div className="transcript-inner">
         {(detail.warnings ?? []).length > 0 && <div className="warning-card"><IconAlertCircle size={16} /> Some records could not be fully parsed.</div>}
-        {detail.messages.map(message => <MessageCard key={`${message.sequence}-${message.id}`} message={message} tools={toolsByMessage.get(message.id) ?? []} />)}
+        {detail.messages.map(message => <div key={`${message.sequence}-${message.id}`} className={cn(activeMatch === message.id && 'search-match')}><MessageCard message={message} source={detail.session.source} tools={toolsByMessage.get(message.id) ?? []} /></div>)}
         {orphanTools.map(tool => <ToolCard key={tool.id} tool={tool} />)}
         {!detail.messages.length && !orphanTools.length && <div className="transcript-empty">This session has no viewable messages.</div>}
       </div>
     </div>
+    {showLatest && <button className="jump-latest" onClick={() => { setSearch(''); scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'instant' }) }}><IconChevronDown size={15} />Latest</button>}
+    </div>
   )
 }
 
-function MessageCard({ message, tools }: { message: Message; tools: ToolCall[] }) {
+function MessageCard({ message, source, tools }: { message: Message; source: SourceName; tools: ToolCall[] }) {
   const [copied, setCopied] = useState(false)
   const isReasoning = message.role === 'reasoning'
   if (isReasoning) {
     return (
-      <details className="reasoning-card">
+      <details id={message.id} className="reasoning-card">
         <summary><IconSparkles size={15} /><span>Reasoning summary</span><IconChevronDown size={15} className="ml-auto chevron" /></summary>
         <div className="reasoning-content"><RichText text={message.content} /></div>
       </details>
@@ -529,7 +578,7 @@ function MessageCard({ message, tools }: { message: Message; tools: ToolCall[] }
     <article id={message.id} className={cn('message-card', `role-${message.role}`)}>
       <div className="message-body">
         <div className="message-heading">
-          <strong>{roleLabel(message.role)}</strong>
+          <strong>{message.role === 'assistant' ? sourceLabel(source) : roleLabel(message.role)}</strong>
           {message.createdAt && <time>{formatTime(message.createdAt)}</time>}
           <Tooltip label={copied ? 'Copied' : 'Copy message'}>
             <Button aria-label="Copy message" variant="ghost" size="icon" className="ml-auto size-7 text-muted-foreground" onClick={async () => {
@@ -574,9 +623,9 @@ function RichText({ text }: { text: string }) {
 }
 
 function MessageUsage({ message }: { message: Message }) {
-  const tokens = message.tokensInput + message.tokensOutput + message.tokensReasoning + message.tokensCacheRead + message.tokensCacheWrite
-  if (!tokens && !message.cost && !message.model) return null
-  return <div className="message-usage">{message.model && <span>{message.model}</span>}{tokens > 0 && <span>{formatNumber(tokens)} tokens</span>}{message.cost > 0 && <span>${message.cost.toFixed(4)}</span>}</div>
+  if (message.role !== 'assistant') return null
+  const fields = [['Input', message.tokensInput], ['Output', message.tokensOutput], ['Reasoning', message.tokensReasoning], ['Cache read', message.tokensCacheRead], ['Cache write', message.tokensCacheWrite]] as const
+  return <div className="message-usage">{message.model && <span className="usage-model">{message.model}</span>}{fields.filter(([, count]) => count > 0).map(([label, count]) => <span key={label}>{label} <b>{formatNumber(count)}</b></span>)}{message.cost > 0 && <span>${message.cost.toFixed(4)}</span>}</div>
 }
 
 function SessionListSkeleton() {

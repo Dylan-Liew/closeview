@@ -49,6 +49,7 @@ export interface ToolCall {
 }
 
 export interface SessionDetail {
+  usage?: { input_tokens: number; output_tokens: number; cached_input_tokens: number; reasoning_output_tokens: number }
   session: Session
   messages: Message[]
   toolCalls: ToolCall[]

@@ -62,10 +62,19 @@ type ToolCall struct {
 }
 
 type Detail struct {
-	Session   Session    `json:"session"`
-	Messages  []Message  `json:"messages"`
-	ToolCalls []ToolCall `json:"toolCalls"`
-	Warnings  []string   `json:"warnings"`
+	Session   Session     `json:"session"`
+	Messages  []Message   `json:"messages"`
+	ToolCalls []ToolCall  `json:"toolCalls"`
+	Warnings  []string    `json:"warnings"`
+	Usage     *TokenUsage `json:"usage,omitempty"`
+}
+
+// Codex reports cumulative totals; cached input and reasoning are subsets.
+type TokenUsage struct {
+	Input     int `json:"input_tokens"`
+	Output    int `json:"output_tokens"`
+	Cached    int `json:"cached_input_tokens"`
+	Reasoning int `json:"reasoning_output_tokens"`
 }
 
 type SourceStatus struct {
