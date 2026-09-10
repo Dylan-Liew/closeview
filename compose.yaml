@@ -3,6 +3,8 @@ services:
     build: .
     container_name: closeview
     restart: unless-stopped
+    mem_limit: 256m
+    mem_reservation: 32m
     network_mode: host
     environment:
       CLOSEVIEW_CODEX_HOME: /sessions/codex
