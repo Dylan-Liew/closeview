@@ -20,6 +20,7 @@ import {
 import { Badge } from './components/ui/badge'
 import { Button } from './components/ui/button'
 import { Input } from './components/ui/input'
+import { PanelResize } from './components/panel-resize'
 import { Skeleton } from './components/ui/skeleton'
 import {
   AlertDialog,
@@ -168,7 +169,8 @@ export function App() {
 
   return (
     <div className={cn('app-shell', mobilePickerOpen && 'mobile-picker-open')}>
-      <aside className={cn('session-sidebar', mobilePickerOpen ? 'mobile-open' : 'mobile-collapsed')}>
+      <aside id="sessions-panel" className={cn('session-sidebar', mobilePickerOpen ? 'mobile-open' : 'mobile-collapsed')}>
+        <PanelResize side="left" />
         <div className="brand-row">
           <div className="brand-mark"><img src="/closeview.png" alt="" className="brand-logo" /></div>
           <div>
@@ -265,7 +267,8 @@ export function App() {
         )}
       </main>
 
-      <aside className="outline-panel">
+      <aside id="prompts-panel" className="outline-panel">
+        <PanelResize side="right" />
         <div className="outline-title">Prompts</div>
         <div className="outline-list">
           {(detail?.messages ?? []).filter(message => message.role === 'user' && message.content.trim()).map((message, index) => (
