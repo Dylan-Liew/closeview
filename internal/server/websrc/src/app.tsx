@@ -411,18 +411,16 @@ function SessionHeader({ session, parent, onOpenNav, onSelectParent, onDelete }:
       <Button aria-label="Open session navigation" variant="ghost" size="icon" className="mobile-session-menu" onClick={onOpenNav}>
         <IconMenu2 size={19} />
       </Button>
-      <div className={cn('source-icon header-source', `source-${session.source}`)}>{sourceIcon(session.source, 17)}</div>
       <div className="session-header-info min-w-0 flex-1">
         <div className="header-title-row">
-          <h1>{session.title}</h1>
+          <h1 title={session.title}>{session.title}</h1>
           {session.isSubsession && <Badge variant="outline" className="subsession-badge">Sub-session</Badge>}
           <Badge variant="outline" className="source-badge">{sourceLabel(session.source)}</Badge>
         </div>
         <div className="header-meta">
           {parent && <><button className="parent-session-link" onClick={() => onSelectParent(parent.id)}><IconGitBranch size={11} />{parent.title}</button><i /></>}
-          {session.projectPath && <span>{session.projectPath}</span>}
+          {session.projectPath && <span title={session.projectPath}>{baseName(session.projectPath)}</span>}
           {session.model && <><i /><span>{session.model}</span></>}
-          <i /><span>{formatDate(session.updatedAt || session.createdAt)}</span>
         </div>
       </div>
       <Tooltip label="Delete session">
@@ -529,7 +527,6 @@ function MessageCard({ message, tools }: { message: Message; tools: ToolCall[] }
   }
   return (
     <article id={message.id} className={cn('message-card', `role-${message.role}`)}>
-      <div className="message-avatar">{message.role === 'user' ? 'You' : message.role === 'assistant' ? 'AI' : message.role.slice(0, 3)}</div>
       <div className="message-body">
         <div className="message-heading">
           <strong>{roleLabel(message.role)}</strong>
