@@ -40,11 +40,11 @@
   .brand-mark { @apply grid size-8 place-items-center rounded-lg border bg-secondary; }
   .brand-logo { @apply size-7 object-contain; }
   .brand-name { @apply text-sm font-semibold tracking-[-.02em]; }
-  .brand-subtitle { @apply text-xs text-muted-foreground; }
+  .brand-subtitle { @apply text-[10px] text-muted-foreground; }
   .sidebar-controls { @apply space-y-2 border-b p-2; }
   .source-tabs { @apply grid gap-1; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
   .source-tab { @apply flex h-7 items-center justify-center gap-1 rounded-md text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground; }
-  .source-tab span { @apply text-[11px] tabular-nums opacity-60; }
+  .source-tab span { @apply text-[9px] tabular-nums opacity-60; }
   .source-tab.active { @apply bg-secondary text-foreground shadow-sm; }
   .session-list { @apply min-h-0 overflow-y-auto p-1.5; }
   .session-tree-row { display: grid; grid-template-columns: 22px minmax(0, 1fr); padding-left: calc(var(--tree-depth) * 12px); }
@@ -53,17 +53,17 @@
   .session-tree-toggle svg.expanded { @apply rotate-90; }
   .session-tree-spacer { @apply grid min-h-[52px] place-items-center text-muted-foreground/60; }
   .detached-sessions { @apply mt-1 border-t pt-1; }
-  .detached-sessions-toggle { @apply flex h-9 w-full items-center gap-2 rounded-md px-2 text-xs text-muted-foreground transition-colors hover:bg-white/[.035] hover:text-foreground; }
+  .detached-sessions-toggle { @apply flex h-9 w-full items-center gap-2 rounded-md px-2 text-[10px] text-muted-foreground transition-colors hover:bg-white/[.035] hover:text-foreground; }
   .detached-sessions-toggle svg { @apply shrink-0 transition-transform; }
   .detached-sessions-toggle svg.expanded { @apply rotate-90; }
   .detached-sessions-toggle span { @apply min-w-0 flex-1 truncate text-left; }
-  .detached-sessions-toggle strong { @apply text-[11px] font-medium tabular-nums; }
+  .detached-sessions-toggle strong { @apply text-[9px] font-medium tabular-nums; }
   .session-row { @apply mb-0.5 flex min-w-0 w-full gap-2.5 rounded-lg border border-transparent p-2 text-left transition-colors hover:bg-white/[.035]; }
   .session-row.active { @apply border-border bg-secondary/75 shadow-[inset_0_1px_0_rgba(255,255,255,.03)]; }
   .session-row-top { @apply flex min-w-0 items-start gap-2; }
-  .session-row-top strong { @apply min-w-0 flex-1 line-clamp-2 break-words text-sm font-medium leading-5; }
-  .session-row-top time { @apply pt-0.5 text-[11px] text-muted-foreground; }
-  .session-row-meta { @apply mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground; }
+  .session-row-top strong { @apply flex-1 truncate text-[13px] font-medium leading-5; }
+  .session-row-top time { @apply pt-0.5 text-[9px] text-muted-foreground; }
+  .session-row-meta { @apply mt-0.5 flex items-center gap-1.5 text-[10px] text-muted-foreground; }
   .session-row-meta span { @apply max-w-[112px] truncate; }
   .session-row-meta i, .header-meta i { @apply size-0.5 rounded-full bg-muted-foreground/50; }
   .source-icon { @apply mt-0.5 grid size-7 shrink-0 place-items-center rounded-md border; }
@@ -79,50 +79,50 @@
   .header-title-row { @apply flex min-w-0 items-center gap-2; }
   .session-header h1 { @apply min-w-0 flex-1 truncate text-[15px] font-semibold tracking-[-.02em]; }
   .subsession-badge { @apply border-sky-900/60 bg-sky-950/30 text-sky-300; }
-  .header-meta { @apply mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground; }
+  .header-meta { @apply mt-1 flex min-w-0 items-center gap-2 text-[10px] text-muted-foreground; }
   .header-meta span { @apply max-w-[360px] truncate; }
   .parent-session-link { @apply inline-flex min-w-0 max-w-[230px] shrink items-center gap-1 truncate rounded-sm text-sky-300 hover:text-sky-200; }
   .parent-session-link svg { @apply shrink-0; }
   .transcript { @apply min-h-0 min-w-0 w-full max-w-full overflow-x-hidden overflow-y-auto scroll-smooth; }
-  .transcript-inner { @apply mx-auto min-w-0 w-full max-w-[780px] px-5 py-8; }
+  .transcript-inner { @apply mx-auto min-w-0 w-full max-w-[900px] px-5 py-8; }
   .message-card { @apply mb-7 grid scroll-mt-5 grid-cols-[30px_minmax(0,1fr)] gap-3; }
-  .message-avatar { @apply grid size-[30px] place-items-center rounded-md border bg-secondary text-[11px] font-semibold uppercase text-muted-foreground; }
+  .message-avatar { @apply grid size-[30px] place-items-center rounded-md border bg-secondary text-[9px] font-semibold uppercase text-muted-foreground; }
   .role-user .message-avatar { @apply border-blue-900/60 bg-blue-950/40 text-blue-300; }
   .role-assistant .message-avatar { @apply border-violet-900/60 bg-violet-950/40 text-violet-300; }
   .role-system .message-avatar { @apply border-zinc-700 bg-zinc-900 text-zinc-400; }
   .message-body { @apply min-w-0 overflow-hidden pt-0.5; }
   .message-heading { @apply mb-2 flex h-6 items-center gap-2; }
   .message-heading strong { @apply text-xs font-semibold; }
-  .message-heading time { @apply text-xs text-muted-foreground; }
-  .message-content { @apply text-[15px] leading-6 text-foreground/90; }
+  .message-heading time { @apply text-[10px] text-muted-foreground; }
+  .message-content { @apply text-[13px] leading-6 text-foreground/90; }
   .message-content p { @apply whitespace-pre-wrap break-words; }
   .message-content p code, .context-content p code { overflow-wrap: anywhere; word-break: break-word; }
-  .message-content pre { @apply my-3 max-h-[520px] overflow-auto rounded-lg border bg-black/45 p-3 font-mono text-[13px] leading-5; }
-  .message-usage { @apply mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground; }
+  .message-content pre { @apply my-3 max-h-[520px] overflow-auto rounded-lg border bg-black/45 p-3 font-mono text-[11px] leading-5; }
+  .message-usage { @apply mt-3 flex gap-3 text-[9px] text-muted-foreground/70; }
   .reasoning-card { @apply mb-5 ml-[42px] rounded-lg border bg-white/[.018]; }
   .reasoning-card summary { @apply flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-[11px] font-medium text-muted-foreground; }
   .reasoning-content { @apply border-t px-3 py-3 text-[12px] leading-5 text-muted-foreground; }
   .reasoning-content p { @apply whitespace-pre-wrap; }
   .context-card { @apply mb-4 ml-[42px] rounded-lg border border-dashed bg-white/[.012]; }
   .context-card summary { @apply flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-[11px] font-medium text-muted-foreground; }
-  .context-card summary time { @apply text-[11px] font-normal; }
+  .context-card summary time { @apply text-[9px] font-normal; }
   .context-content { @apply max-h-[520px] overflow-auto border-t px-3 py-3 text-[11px] leading-5 text-muted-foreground; }
   .context-content p { @apply whitespace-pre-wrap break-words; }
-  .context-content pre { @apply my-2 overflow-auto rounded-md border bg-black/30 p-3 font-mono text-[13px]; }
+  .context-content pre { @apply my-2 overflow-auto rounded-md border bg-black/30 p-3 font-mono text-[10px]; }
   details[open] .chevron { @apply rotate-180; }
   .chevron { @apply transition-transform; }
   .tool-card { @apply mt-3 overflow-hidden rounded-lg border bg-black/20; }
   .tool-card summary { @apply flex cursor-pointer list-none items-center gap-2 px-2.5 py-2 text-[11px]; }
-  .tool-card summary > span { @apply text-[11px] text-muted-foreground; }
+  .tool-card summary > span { @apply text-[9px] text-muted-foreground; }
   .tool-icon { @apply grid size-6 place-items-center rounded-md bg-secondary text-muted-foreground; }
   .tool-content { @apply border-t; }
-  .tool-content section > div { @apply border-b bg-secondary/40 px-3 py-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground; }
-  .tool-content pre { @apply max-h-[360px] overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-[13px] leading-5 text-foreground/80; }
+  .tool-content section > div { @apply border-b bg-secondary/40 px-3 py-1.5 text-[9px] font-medium uppercase tracking-wider text-muted-foreground; }
+  .tool-content pre { @apply max-h-[360px] overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-[10px] leading-5 text-foreground/80; }
   .outline-panel { @apply grid min-h-0 border-l bg-[#0a0a0b]; grid-template-rows: auto minmax(0,1fr); }
   .outline-title { @apply flex h-[60px] items-center border-b px-4 text-xs font-semibold; }
   .outline-list { @apply min-h-0 overflow-y-auto p-2; }
   .outline-list button { @apply mb-1 grid w-full grid-cols-[24px_minmax(0,1fr)] gap-1.5 rounded-md p-2 text-left hover:bg-accent; }
-  .outline-list button span { @apply text-[11px] tabular-nums text-muted-foreground; }
+  .outline-list button span { @apply text-[9px] tabular-nums text-muted-foreground; }
   .outline-list button strong { @apply truncate text-[11px] font-normal text-foreground/80; }
   .outline-list p { @apply p-2 text-[11px] text-muted-foreground; }
   .main-empty { @apply col-span-full row-span-full grid place-content-center justify-items-center text-center; }
@@ -135,18 +135,6 @@
   .mobile-picker-close, .mobile-session-menu, .mobile-sidebar-backdrop { display: none !important; }
 }
 
-.mobile-message-avatar { display: none; }
-.session-details { position: relative; flex-shrink: 0; }
-.session-details > summary { cursor: pointer; list-style: none; display: grid; place-items: center; min-height: 36px; padding: 0 8px; font-size: 12px; border-radius: 6px; }
-.session-details > summary::-webkit-details-marker { display: none; }
-.session-details > summary:hover { background: hsl(var(--accent)); }
-.session-details-panel { position: absolute; right: 0; top: 100%; z-index: 40; width: min(360px, 85vw); padding: 16px; border: 1px solid hsl(var(--border)); border-radius: 8px; background: hsl(var(--popover)); box-shadow: 0 8px 24px #0008; font-size: 12px; overflow-wrap: anywhere; }
-.session-details-panel dt { color: hsl(var(--muted-foreground)); margin-top: 8px; }
-.session-details-panel dd { margin: 4px 0 0; }
-@media (pointer: coarse) {
-  button[aria-label], .session-details > summary, .source-tab, .tool-card summary, .reasoning-card summary, .context-card summary { min-width: 44px; min-height: 44px; }
-  input { font-size: 16px; }
-}
 @media (max-width: 1180px) {
   .app-shell { grid-template-columns: 310px minmax(0, 1fr); }
   .outline-panel { display: none; }
@@ -180,24 +168,20 @@
   .mobile-sidebar-backdrop.open { display: block !important; opacity: 1; pointer-events: auto; }
   .session-header { width: 100%; min-width: 0; gap: .5rem; padding-inline: .5rem; overflow: hidden; }
   .session-header-info { width: 0; }
-  .session-header { position: relative; overflow: visible; }
-  .session-details { position: static; }
-  .session-details-panel { right: 8px; }
   .header-title-row { gap: .375rem; }
-  .session-header h1 { font-size: 14px; }
+  .session-header h1 { font-size: 13px; }
   .header-meta { gap: .375rem; overflow: hidden; }
-  .header-meta span { min-width: 0; max-width: 100%; }
+  .header-meta span { min-width: 0; max-width: 110px; }
   .parent-session-link { max-width: 120px; }
-  .source-badge, .header-source, .subsession-badge { display: none; }
+  .source-badge { display: none; }
   .transcript-inner { width: 100%; max-width: 100%; padding: .875rem .75rem 1.5rem; }
-  .message-card { display: block; margin-bottom: 1.25rem; }
-  .message-card > .message-avatar { display: none; }
-  .message-heading .mobile-message-avatar { display: grid; width: 26px; height: 26px; font-size: 10px; }
+  .message-card { grid-template-columns: 26px minmax(0, 1fr); gap: .5rem; margin-bottom: 1.25rem; }
+  .message-avatar { width: 26px; height: 26px; font-size: 8px; }
   .message-heading { margin-bottom: .375rem; }
-  .message-content { font-size: 15px; line-height: 1.5rem; }
+  .message-content { font-size: 12px; line-height: 1.35rem; }
   .message-content p, .reasoning-content p, .context-content p { overflow-wrap: anywhere; word-break: break-word; }
-  .message-content pre { max-width: 100%; padding: .625rem; font-size: 13px; line-height: 1.25rem; }
-  .reasoning-card, .context-card, .warning-card { margin-left: 0; }
+  .message-content pre { max-width: 100%; padding: .625rem; font-size: 10px; line-height: 1.125rem; }
+  .reasoning-card, .context-card, .warning-card { margin-left: 34px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

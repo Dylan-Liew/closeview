@@ -420,18 +420,11 @@ function SessionHeader({ session, parent, onOpenNav, onSelectParent, onDelete }:
         </div>
         <div className="header-meta">
           {parent && <><button className="parent-session-link" onClick={() => onSelectParent(parent.id)}><IconGitBranch size={11} />{parent.title}</button><i /></>}
-          <span>{session.model || sourceLabel(session.source)}</span>
+          {session.projectPath && <span>{session.projectPath}</span>}
+          {session.model && <><i /><span>{session.model}</span></>}
+          <i /><span>{formatDate(session.updatedAt || session.createdAt)}</span>
         </div>
       </div>
-      <details className="session-details" key={session.id}>
-        <summary aria-label="Session details">Details</summary>
-        <dl className="session-details-panel">
-          <dt>Session</dt><dd>{session.title}</dd>
-          <dt>Project</dt><dd>{session.projectPath || 'Not recorded'}</dd>
-          <dt>Model</dt><dd>{session.model || 'Not recorded'}</dd>
-          <dt>Updated</dt><dd>{formatDate(session.updatedAt || session.createdAt)}</dd>
-        </dl>
-      </details>
       <Tooltip label="Delete session">
         <Button aria-label="Delete session" variant="ghost" size="icon" className="text-muted-foreground hover:bg-destructive/10 hover:text-red-300" onClick={onDelete}>
           <IconTrash size={17} />
@@ -539,7 +532,6 @@ function MessageCard({ message, tools }: { message: Message; tools: ToolCall[] }
       <div className="message-avatar">{message.role === 'user' ? 'You' : message.role === 'assistant' ? 'AI' : message.role.slice(0, 3)}</div>
       <div className="message-body">
         <div className="message-heading">
-          <div className="message-avatar mobile-message-avatar">{message.role === 'user' ? 'You' : 'AI'}</div>
           <strong>{roleLabel(message.role)}</strong>
           {message.createdAt && <time>{formatTime(message.createdAt)}</time>}
           <Tooltip label={copied ? 'Copied' : 'Copy message'}>
