@@ -37,10 +37,9 @@
   .app-shell { display: grid; grid-template-columns: clamp(220px, var(--panel-left, 290px), min(440px, 30vw)) minmax(0, 1fr) clamp(170px, var(--panel-right, 210px), min(360px, 25vw)); height: 100vh; min-height: 0; }
   .session-sidebar { @apply grid min-h-0 border-r bg-[#0a0a0b]; grid-template-rows: auto auto minmax(0,1fr) auto; }
   .brand-row { @apply flex h-[60px] items-center gap-2.5 border-b px-3; }
-  .brand-mark { @apply grid size-8 place-items-center rounded-lg border bg-secondary; }
-  .brand-logo { @apply size-7 object-contain; }
+  .brand-mark { @apply grid size-6 shrink-0 place-items-center; }
+  .brand-logo { @apply size-5 object-contain; }
   .brand-name { @apply text-sm font-semibold tracking-[-.02em]; }
-  .brand-subtitle { @apply text-[11px] text-muted-foreground; }
   .sidebar-controls { @apply space-y-2 border-b p-2; }
   .source-tabs { @apply grid gap-1; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
   .source-tab { @apply flex h-7 items-center justify-center gap-1 rounded-md text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground; }

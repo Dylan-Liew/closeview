@@ -173,10 +173,7 @@ export function App() {
         <PanelResize side="left" />
         <div className="brand-row">
           <div className="brand-mark"><img src="/closeview.png" alt="" className="brand-logo" /></div>
-          <div>
-            <div className="brand-name">CloseView</div>
-            <div className="brand-subtitle">Local session history</div>
-          </div>
+          <div className="brand-name">CloseView</div>
           <Tooltip label="Refresh local sessions">
             <Button aria-label="Refresh local sessions" size="icon" variant="ghost" className="ml-auto size-8" onClick={() => void loadCatalog(true)} disabled={refreshing}>
               <IconRefresh size={16} className={cn(refreshing && 'animate-spin')} />
