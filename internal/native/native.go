@@ -14,19 +14,23 @@ import (
 var ErrNotFound = errors.New("session not found")
 
 type Session struct {
-	ID           string `json:"id"`
-	NativeID     string `json:"nativeId"`
-	ThreadID     string `json:"threadId"`
-	Source       string `json:"source"`
-	Title        string `json:"title"`
-	ProjectPath  string `json:"projectPath"`
-	CreatedAt    string `json:"createdAt"`
-	UpdatedAt    string `json:"updatedAt"`
-	Provider     string `json:"provider"`
-	Model        string `json:"model"`
-	Agent        string `json:"agent"`
-	Origin       string `json:"origin"`
-	MessageCount int    `json:"messageCount"`
+	ID             string `json:"id"`
+	NativeID       string `json:"nativeId"`
+	ThreadID       string `json:"threadId"`
+	ParentID       string `json:"parentId,omitempty"`
+	ParentThreadID string `json:"parentThreadId,omitempty"`
+	IsSubsession   bool   `json:"isSubsession"`
+	ChildCount     int    `json:"childCount"`
+	Source         string `json:"source"`
+	Title          string `json:"title"`
+	ProjectPath    string `json:"projectPath"`
+	CreatedAt      string `json:"createdAt"`
+	UpdatedAt      string `json:"updatedAt"`
+	Provider       string `json:"provider"`
+	Model          string `json:"model"`
+	Agent          string `json:"agent"`
+	Origin         string `json:"origin"`
+	MessageCount   int    `json:"messageCount"`
 }
 
 type Message struct {
@@ -145,10 +149,19 @@ func (m *Manager) List(ctx context.Context, query, source string) Catalog {
 		for _, session := range sessions {
 			session.Source = name
 			session.ID = EncodeID(name, session.NativeID)
-			if query == "" || sessionMatches(session, query) {
-				catalog.Sessions = append(catalog.Sessions, session)
+			session.IsSubsession = session.ParentThreadID != ""
+			catalog.Sessions = append(catalog.Sessions, session)
+		}
+	}
+	linkSessionRelationships(catalog.Sessions)
+	if query != "" {
+		matched := catalog.Sessions[:0]
+		for _, session := range catalog.Sessions {
+			if sessionMatches(session, query) {
+				matched = append(matched, session)
 			}
 		}
+		catalog.Sessions = matched
 	}
 	sort.SliceStable(catalog.Sessions, func(i, j int) bool {
 		left := catalog.Sessions[i].UpdatedAt
@@ -179,7 +192,39 @@ func (m *Manager) Get(ctx context.Context, id string) (Detail, error) {
 	detail.Session.Source = adapter.Name()
 	detail.Session.NativeID = nativeID
 	detail.Session.ID = EncodeID(adapter.Name(), nativeID)
+	detail.Session.IsSubsession = detail.Session.ParentThreadID != ""
+	if sessions, listErr := adapter.List(ctx); listErr == nil {
+		for _, session := range sessions {
+			if session.ThreadID == detail.Session.ParentThreadID {
+				detail.Session.ParentID = EncodeID(adapter.Name(), session.NativeID)
+			}
+			if session.ParentThreadID == detail.Session.ThreadID {
+				detail.Session.ChildCount++
+			}
+		}
+	}
 	return detail, nil
+}
+
+func linkSessionRelationships(sessions []Session) {
+	byThread := make(map[string]string, len(sessions))
+	for _, session := range sessions {
+		if session.ThreadID != "" {
+			byThread[session.Source+"\x00"+session.ThreadID] = session.ID
+		}
+	}
+	byID := make(map[string]int, len(sessions))
+	for index := range sessions {
+		byID[sessions[index].ID] = index
+		if sessions[index].ParentThreadID != "" {
+			sessions[index].ParentID = byThread[sessions[index].Source+"\x00"+sessions[index].ParentThreadID]
+		}
+	}
+	for _, session := range sessions {
+		if index, ok := byID[session.ParentID]; ok {
+			sessions[index].ChildCount++
+		}
+	}
 }
 
 func (m *Manager) Delete(ctx context.Context, id string) error {

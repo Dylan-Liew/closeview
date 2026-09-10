@@ -37,8 +37,13 @@ func (a *openCodeAdapter) List(ctx context.Context) ([]Session, error) {
 		return nil, err
 	}
 	defer db.Close()
+	parentExpression := "''"
+	var hasParent int
+	if err := db.QueryRowContext(ctx, `select count(*) from pragma_table_info('session') where name = 'parent_id'`).Scan(&hasParent); err == nil && hasParent > 0 {
+		parentExpression = "coalesce(s.parent_id, '')"
+	}
 	rows, err := db.QueryContext(ctx, `
-		select s.id, coalesce(s.title, ''), coalesce(s.directory, ''),
+		select s.id, `+parentExpression+`, coalesce(s.title, ''), coalesce(s.directory, ''),
 			coalesce(s.agent, ''), coalesce(s.model, ''),
 			coalesce(s.time_created, 0), coalesce(s.time_updated, 0),
 			(select count(*) from message m where m.session_id = s.id)
@@ -50,15 +55,15 @@ func (a *openCodeAdapter) List(ctx context.Context) ([]Session, error) {
 	defer rows.Close()
 	var sessions []Session
 	for rows.Next() {
-		var id, title, project, agent, modelData string
+		var id, parentID, title, project, agent, modelData string
 		var created, updated int64
 		var count int
-		if err := rows.Scan(&id, &title, &project, &agent, &modelData, &created, &updated, &count); err != nil {
+		if err := rows.Scan(&id, &parentID, &title, &project, &agent, &modelData, &created, &updated, &count); err != nil {
 			return nil, err
 		}
 		provider, model := openCodeModel(modelData)
 		sessions = append(sessions, Session{
-			NativeID: id, ThreadID: id, Title: titleFallback(title, "", project, id),
+			NativeID: id, ThreadID: id, ParentThreadID: parentID, Title: titleFallback(title, "", project, id),
 			ProjectPath: project, Agent: agent, Provider: provider, Model: model,
 			CreatedAt: sourceTime(created), UpdatedAt: sourceTime(updated),
 			MessageCount: count,

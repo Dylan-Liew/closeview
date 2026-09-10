@@ -4,6 +4,10 @@ export interface Session {
   id: string
   nativeId: string
   threadId: string
+  parentId?: string
+  parentThreadId?: string
+  isSubsession: boolean
+  childCount: number
   source: SourceName
   title: string
   projectPath: string

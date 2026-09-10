@@ -57,6 +57,44 @@ func TestOpenCodeListGetDelete(t *testing.T) {
 	}
 }
 
+func TestOpenCodeRelationships(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "opencode.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, statement := range []string{
+		`create table session (id text primary key, parent_id text, title text, directory text, agent text, model text, time_created integer, time_updated integer)`,
+		`create table message (id text primary key, session_id text)`,
+		`insert into session values ('parent', '', 'Parent session', '/tmp/project', '', '', 1, 2)`,
+		`insert into session values ('child', 'parent', 'Child session', '/tmp/project', 'explore', '', 2, 3)`,
+	} {
+		if _, err := db.Exec(statement); err != nil {
+			db.Close()
+			t.Fatal(err)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	catalog := New(NewOpenCode(path)).List(context.Background(), "", "")
+	parent := catalogSession(t, catalog, "parent")
+	child := catalogSession(t, catalog, "child")
+	if child.ParentThreadID != "parent" || child.ParentID != parent.ID || !child.IsSubsession || parent.ChildCount != 1 {
+		t.Fatalf("relationships not linked: parent=%+v child=%+v", parent, child)
+	}
+	filteredParent := catalogSession(t, New(NewOpenCode(path)).List(context.Background(), "Parent session", ""), "parent")
+	if filteredParent.ChildCount != 1 {
+		t.Fatalf("filtered parent lost child count: %+v", filteredParent)
+	}
+	filteredChild := catalogSession(t, New(NewOpenCode(path)).List(context.Background(), "Child session", ""), "child")
+	if filteredChild.ParentID != parent.ID {
+		t.Fatalf("filtered child lost parent link: %+v", filteredChild)
+	}
+}
+
 func TestCodexListGetDelete(t *testing.T) {
 	home := t.TempDir()
 	rolloutDir := filepath.Join(home, "sessions", "2026", "01", "02")
@@ -74,17 +112,26 @@ func TestCodexListGetDelete(t *testing.T) {
 	}, "\n")+"\n")
 	writeFixture(t, filepath.Join(home, "session_index.jsonl"), `{"id":"thread-test","thread_name":"CloseView revamp","updated_at":"2026-01-02T03:04:11Z"}`+"\n")
 	writeFixture(t, filepath.Join(home, "history.jsonl"), `{"session_id":"thread-test","text":"Build the viewer","ts":1}`+"\n")
+	writeFixture(t, filepath.Join(rolloutDir, "rollout-child.jsonl"), strings.Join([]string{
+		`{"timestamp":"2026-01-02T03:04:12Z","type":"session_meta","payload":{"id":"thread-child","parent_thread_id":"thread-test","timestamp":"2026-01-02T03:04:12Z","cwd":"/tmp/codex","originator":"Codex","source":{"subagent":{"other":"reviewer"}},"thread_source":"subagent"}}`,
+		`{"timestamp":"2026-01-02T03:04:13Z","type":"response_item","payload":{"id":"u2","type":"message","role":"user","content":[{"type":"input_text","text":"Review the viewer"}]}}`,
+	}, "\n")+"\n")
 
 	adapter := NewCodex(home)
 	sessions, err := adapter.List(context.Background())
-	if err != nil || len(sessions) != 1 || sessions[0].Title != "CloseView revamp" {
+	if err != nil || len(sessions) != 2 {
 		t.Fatalf("list: sessions=%+v err=%v", sessions, err)
 	}
-	detail, err := adapter.Get(context.Background(), sessions[0].NativeID)
+	parent := nativeSession(t, sessions, "thread-test")
+	child := nativeSession(t, sessions, "thread-child")
+	if parent.Title != "CloseView revamp" || child.ParentThreadID != "thread-test" || child.Agent != "reviewer" {
+		t.Fatalf("unexpected Codex relationship: parent=%+v child=%+v", parent, child)
+	}
+	detail, err := adapter.Get(context.Background(), parent.NativeID)
 	if err != nil || len(detail.Messages) != 2 || len(detail.ToolCalls) != 1 || detail.ToolCalls[0].Output != "ok" {
 		t.Fatalf("get: detail=%+v err=%v", detail, err)
 	}
-	if err := adapter.Delete(context.Background(), sessions[0].NativeID); err != nil {
+	if err := adapter.Delete(context.Background(), parent.NativeID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(rollout); !os.IsNotExist(err) {
@@ -107,23 +154,54 @@ func TestClaudeListGetDelete(t *testing.T) {
 		`{"type":"user","uuid":"u2","sessionId":"claude-test","cwd":"/tmp/project","timestamp":"2026-01-02T03:04:07Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tool-1","content":"package main"}]}}`,
 	}, "\n")+"\n")
 	writeFixture(t, filepath.Join(home, "history.jsonl"), `{"sessionId":"claude-test","display":"Inspect the code"}`+"\n")
+	writeFixture(t, filepath.Join(projectDir, "claude-test", "subagents", "agent-worker.jsonl"), strings.Join([]string{
+		`{"type":"user","uuid":"su1","sessionId":"claude-test","agentId":"worker","isSidechain":true,"cwd":"/tmp/project","timestamp":"2026-01-02T03:04:08Z","message":{"role":"user","content":"Inspect the parser"}}`,
+		`{"type":"assistant","uuid":"sa1","sessionId":"claude-test","agentId":"worker","isSidechain":true,"cwd":"/tmp/project","timestamp":"2026-01-02T03:04:09Z","message":{"role":"assistant","model":"claude-test-model","content":"Parser looks good"}}`,
+	}, "\n")+"\n")
 
 	adapter := NewClaude(home)
 	sessions, err := adapter.List(context.Background())
-	if err != nil || len(sessions) != 1 || sessions[0].MessageCount != 2 {
+	if err != nil || len(sessions) != 2 {
 		t.Fatalf("list: sessions=%+v err=%v", sessions, err)
 	}
-	detail, err := adapter.Get(context.Background(), sessions[0].NativeID)
+	parent := nativeSession(t, sessions, "claude-test")
+	child := nativeSession(t, sessions, "worker")
+	if parent.MessageCount != 2 || child.ParentThreadID != "claude-test" || child.Agent != "worker" || child.MessageCount != 2 {
+		t.Fatalf("unexpected Claude relationship: parent=%+v child=%+v", parent, child)
+	}
+	detail, err := adapter.Get(context.Background(), parent.NativeID)
 	if err != nil || len(detail.Messages) != 2 || len(detail.ToolCalls) != 1 || !strings.Contains(detail.ToolCalls[0].Output, "package main") {
 		t.Fatalf("get: detail=%+v err=%v", detail, err)
 	}
-	if err := adapter.Delete(context.Background(), sessions[0].NativeID); err != nil {
+	if err := adapter.Delete(context.Background(), parent.NativeID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(projectDir, "claude-test")); !os.IsNotExist(err) {
 		t.Fatalf("session artifact directory still exists: %v", err)
 	}
 	assertFileDoesNotContain(t, filepath.Join(home, "history.jsonl"), "claude-test")
+}
+
+func nativeSession(t *testing.T, sessions []Session, threadID string) Session {
+	t.Helper()
+	for _, session := range sessions {
+		if session.ThreadID == threadID {
+			return session
+		}
+	}
+	t.Fatalf("session %q not found in %+v", threadID, sessions)
+	return Session{}
+}
+
+func catalogSession(t *testing.T, catalog Catalog, nativeID string) Session {
+	t.Helper()
+	for _, session := range catalog.Sessions {
+		if session.NativeID == nativeID {
+			return session
+		}
+	}
+	t.Fatalf("session %q not found in %+v", nativeID, catalog.Sessions)
+	return Session{}
 }
 
 func writeFixture(t *testing.T, path, content string) {

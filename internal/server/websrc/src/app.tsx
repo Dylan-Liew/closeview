@@ -4,10 +4,12 @@ import {
   IconBrandOpenai,
   IconCheck,
   IconChevronDown,
+  IconChevronRight,
   IconCode,
   IconCopy,
   IconMenu2,
   IconMessageCircle,
+  IconGitBranch,
   IconRefresh,
   IconSearch,
   IconSparkles,
@@ -47,6 +49,7 @@ export function App() {
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [mobilePickerOpen, setMobilePickerOpen] = useState(() => !new URLSearchParams(location.search).get('session'))
   const [error, setError] = useState('')
+  const [expandedSessions, setExpandedSessions] = useState<Set<string>>(() => new Set())
 
   const loadCatalog = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true)
@@ -96,14 +99,13 @@ export function App() {
     return () => controller.abort()
   }, [activeID])
 
-  const visibleSessions = useMemo(() => {
+  const visibleSessionForest = useMemo(() => {
     const normalized = query.trim().toLowerCase()
-    return catalog.sessions.filter(session => {
+    const sessions = catalog.sessions.filter(session => {
       if (source !== 'all' && session.source !== source) return false
-      if (!normalized) return true
-      return [session.title, session.threadId, session.projectPath, session.model, session.agent]
-        .join('\n').toLowerCase().includes(normalized)
+      return true
     })
+    return filterSessionForest(buildSessionForest(sessions), normalized)
   }, [catalog.sessions, query, source])
 
   const sourceCounts = useMemo<Record<SourceName, number>>(() => ({
@@ -116,6 +118,20 @@ export function App() {
   useEffect(() => {
     if (source !== 'all' && sourceCounts[source] === 0) setSource('all')
   }, [source, sourceCounts])
+
+  useEffect(() => {
+    if (!activeID) return
+    const parents = new Map(catalog.sessions.map(session => [session.id, session.parentId]))
+    setExpandedSessions(current => {
+      const next = new Set(current)
+      let parentID = parents.get(activeID)
+      while (parentID) {
+        next.add(parentID)
+        parentID = parents.get(parentID)
+      }
+      return next.size === current.size ? current : next
+    })
+  }, [activeID, catalog.sessions])
 
   async function deleteSession() {
     if (!detail) return
@@ -130,7 +146,7 @@ export function App() {
         throw new Error(data.error || 'Could not delete session')
       }
       const deletedID = detail.session.id
-      const next = catalog.sessions.find(session => session.id !== deletedID)?.id ?? ''
+      const next = detail.session.parentId || catalog.sessions.find(session => session.id !== deletedID)?.id || ''
       setCatalog(current => ({ ...current, sessions: current.sessions.filter(session => session.id !== deletedID) }))
       setDetail(null)
       setActiveID(next)
@@ -185,9 +201,29 @@ export function App() {
         </div>
 
         <div className="session-list">
-          {loadingCatalog ? <SessionListSkeleton /> : visibleSessions.length ? visibleSessions.map(session => (
-            <SessionRow key={session.id} session={session} active={session.id === activeID} onClick={() => { setActiveID(session.id); setMobilePickerOpen(false) }} />
-          )) : (
+          {loadingCatalog ? <SessionListSkeleton /> : visibleSessionForest.roots.length || visibleSessionForest.detached.length ? <>
+            {visibleSessionForest.roots.map(node => (
+              <SessionTree
+                key={node.session.id}
+                node={node}
+                activeID={activeID}
+                expanded={expandedSessions}
+                forceExpanded={Boolean(query.trim())}
+                onToggle={toggleExpanded(setExpandedSessions)}
+                onSelect={id => { setActiveID(id); setMobilePickerOpen(false) }}
+              />
+            ))}
+            {visibleSessionForest.detached.length > 0 && (
+              <DetachedSessions
+                nodes={visibleSessionForest.detached}
+                activeID={activeID}
+                expanded={expandedSessions}
+                forceExpanded={Boolean(query.trim())}
+                onToggle={toggleExpanded(setExpandedSessions)}
+                onSelect={id => { setActiveID(id); setMobilePickerOpen(false) }}
+              />
+            )}
+          </> : (
             <div className="sidebar-empty">
               <IconSearch size={22} />
               <span>{query ? 'No matching sessions' : 'No local sessions found'}</span>
@@ -209,7 +245,13 @@ export function App() {
         )}
         {loadingDetail ? <DetailSkeleton /> : detail ? (
           <>
-            <SessionHeader session={detail.session} onOpenNav={() => setMobilePickerOpen(true)} onDelete={() => setDeleteOpen(true)} />
+            <SessionHeader
+              session={detail.session}
+              parent={catalog.sessions.find(session => session.id === detail.session.parentId)}
+              onOpenNav={() => setMobilePickerOpen(true)}
+              onSelectParent={id => setActiveID(id)}
+              onDelete={() => setDeleteOpen(true)}
+            />
             <Transcript detail={detail} />
           </>
         ) : (
@@ -237,7 +279,7 @@ export function App() {
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <div className="delete-icon"><IconTrash size={19} /></div>
-          <AlertDialogTitle>Delete this {detail ? sourceLabel(detail.session.source) : ''} session?</AlertDialogTitle>
+          <AlertDialogTitle>Delete this {detail?.session.isSubsession ? 'sub-session' : `${detail ? sourceLabel(detail.session.source) : ''} session`}?</AlertDialogTitle>
           <AlertDialogDescription>
             This permanently removes <strong className="text-foreground">{detail?.session.title}</strong> from its native local session store. This cannot be undone by CloseView.
           </AlertDialogDescription>
@@ -254,6 +296,93 @@ export function App() {
   )
 }
 
+interface SessionNode {
+  session: Session
+  children: SessionNode[]
+}
+
+interface SessionForest {
+  roots: SessionNode[]
+  detached: SessionNode[]
+}
+
+const detachedGroupID = '__detached_subsessions__'
+
+function DetachedSessions({ nodes, activeID, expanded, forceExpanded, onToggle, onSelect }: {
+  nodes: SessionNode[]
+  activeID: string
+  expanded: Set<string>
+  forceExpanded: boolean
+  onToggle: (id: string) => void
+  onSelect: (id: string) => void
+}) {
+  const isExpanded = forceExpanded || expanded.has(detachedGroupID) || nodes.some(node => sessionTreeContains(node, activeID))
+  return (
+    <div className="detached-sessions">
+      <button className="detached-sessions-toggle" aria-expanded={isExpanded} onClick={() => onToggle(detachedGroupID)}>
+        <IconChevronRight size={14} className={cn(isExpanded && 'expanded')} />
+        <IconGitBranch size={14} />
+        <span>Detached sub-sessions</span>
+        <strong>{nodes.length}</strong>
+      </button>
+      {isExpanded && nodes.map(node => (
+        <SessionTree
+          key={node.session.id}
+          node={node}
+          activeID={activeID}
+          expanded={expanded}
+          forceExpanded={forceExpanded}
+          onToggle={onToggle}
+          onSelect={onSelect}
+          depth={1}
+        />
+      ))}
+    </div>
+  )
+}
+
+function SessionTree({ node, activeID, expanded, forceExpanded, onToggle, onSelect, depth = 0 }: {
+  node: SessionNode
+  activeID: string
+  expanded: Set<string>
+  forceExpanded: boolean
+  onToggle: (id: string) => void
+  onSelect: (id: string) => void
+  depth?: number
+}) {
+  const hasChildren = node.children.length > 0
+  const isExpanded = forceExpanded || expanded.has(node.session.id)
+  return (
+    <div className="session-tree">
+      <div className="session-tree-row" style={{ '--tree-depth': depth } as React.CSSProperties}>
+        {hasChildren ? (
+          <button
+            aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${node.session.title}`}
+            aria-expanded={isExpanded}
+            className="session-tree-toggle"
+            onClick={() => onToggle(node.session.id)}
+          >
+            <IconChevronRight size={14} className={cn(isExpanded && 'expanded')} />
+          </button>
+        ) : <span className="session-tree-spacer">{node.session.isSubsession && <IconGitBranch size={12} />}</span>}
+        <SessionRow session={node.session} active={node.session.id === activeID} onClick={() => onSelect(node.session.id)} />
+      </div>
+      {hasChildren && isExpanded && node.children.map(child => (
+        <SessionTree
+          key={child.session.id}
+          node={child}
+          activeID={activeID}
+          expanded={expanded}
+          forceExpanded={forceExpanded}
+          onToggle={onToggle}
+          onSelect={onSelect}
+          depth={depth + 1}
+        />
+      ))}
+    </div>
+  )
+}
+
 function SessionRow({ session, active, onClick }: { session: Session; active: boolean; onClick: () => void }) {
   return (
     <button className={cn('session-row', active && 'active')} onClick={onClick}>
@@ -261,7 +390,8 @@ function SessionRow({ session, active, onClick }: { session: Session; active: bo
       <div className="min-w-0 flex-1">
         <div className="session-row-top"><strong>{session.title || 'Untitled session'}</strong><time>{relativeTime(session.updatedAt || session.createdAt)}</time></div>
         <div className="session-row-meta">
-          <span>{baseName(session.projectPath) || sourceLabel(session.source)}</span>
+          <span>{session.isSubsession ? session.agent || 'Sub-session' : baseName(session.projectPath) || sourceLabel(session.source)}</span>
+          {session.childCount > 0 && <><i /><span>{session.childCount} sub-session{session.childCount === 1 ? '' : 's'}</span></>}
           {session.messageCount > 0 && <><i /> <span>{session.messageCount} messages</span></>}
         </div>
       </div>
@@ -269,16 +399,27 @@ function SessionRow({ session, active, onClick }: { session: Session; active: bo
   )
 }
 
-function SessionHeader({ session, onOpenNav, onDelete }: { session: Session; onOpenNav: () => void; onDelete: () => void }) {
+function SessionHeader({ session, parent, onOpenNav, onSelectParent, onDelete }: {
+  session: Session
+  parent?: Session
+  onOpenNav: () => void
+  onSelectParent: (id: string) => void
+  onDelete: () => void
+}) {
   return (
     <header className="session-header">
       <Button aria-label="Open session navigation" variant="ghost" size="icon" className="mobile-session-menu" onClick={onOpenNav}>
         <IconMenu2 size={19} />
       </Button>
       <div className={cn('source-icon header-source', `source-${session.source}`)}>{sourceIcon(session.source, 17)}</div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2"><h1>{session.title}</h1><Badge variant="outline">{sourceLabel(session.source)}</Badge></div>
+      <div className="session-header-info min-w-0 flex-1">
+        <div className="header-title-row">
+          <h1>{session.title}</h1>
+          {session.isSubsession && <Badge variant="outline" className="subsession-badge">Sub-session</Badge>}
+          <Badge variant="outline" className="source-badge">{sourceLabel(session.source)}</Badge>
+        </div>
         <div className="header-meta">
+          {parent && <><button className="parent-session-link" onClick={() => onSelectParent(parent.id)}><IconGitBranch size={11} />{parent.title}</button><i /></>}
           {session.projectPath && <span>{session.projectPath}</span>}
           {session.model && <><i /><span>{session.model}</span></>}
           <i /><span>{formatDate(session.updatedAt || session.createdAt)}</span>
@@ -291,6 +432,61 @@ function SessionHeader({ session, onOpenNav, onDelete }: { session: Session; onO
       </Tooltip>
     </header>
   )
+}
+
+function buildSessionForest(sessions: Session[]): SessionForest {
+  const nodes = new Map(sessions.map(session => [session.id, { session, children: [] as SessionNode[] }]))
+  const roots: SessionNode[] = []
+  const detached: SessionNode[] = []
+  for (const node of nodes.values()) {
+    const parent = node.session.parentId ? nodes.get(node.session.parentId) : undefined
+    if (parent && parent !== node) parent.children.push(node)
+    else if (node.session.isSubsession) detached.push(node)
+    else roots.push(node)
+  }
+  const sortNodes = (items: SessionNode[]) => {
+    items.sort((left, right) => sessionTimestamp(right) - sessionTimestamp(left))
+    items.forEach(item => sortNodes(item.children))
+  }
+  sortNodes(roots)
+  sortNodes(detached)
+  return { roots, detached }
+}
+
+function filterSessionForest(forest: SessionForest, query: string): SessionForest {
+  if (!query) return forest
+  return {
+    roots: filterSessionTree(forest.roots, query),
+    detached: filterSessionTree(forest.detached, query),
+  }
+}
+
+function filterSessionTree(nodes: SessionNode[], query: string): SessionNode[] {
+  if (!query) return nodes
+  return nodes.flatMap(node => {
+    const children = filterSessionTree(node.children, query)
+    const matches = [node.session.title, node.session.threadId, node.session.projectPath, node.session.model, node.session.agent]
+      .join('\n').toLowerCase().includes(query)
+    return matches || children.length ? [{ ...node, children: matches ? node.children : children }] : []
+  })
+}
+
+function toggleExpanded(setExpanded: React.Dispatch<React.SetStateAction<Set<string>>>) {
+  return (id: string) => setExpanded(current => {
+    const next = new Set(current)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    return next
+  })
+}
+
+function sessionTimestamp(node: SessionNode): number {
+  const own = new Date(node.session.updatedAt || node.session.createdAt).valueOf() || 0
+  return node.children.reduce((latest, child) => Math.max(latest, sessionTimestamp(child)), own)
+}
+
+function sessionTreeContains(node: SessionNode, sessionID: string): boolean {
+  return node.session.id === sessionID || node.children.some(child => sessionTreeContains(child, sessionID))
 }
 
 function Transcript({ detail }: { detail: SessionDetail }) {

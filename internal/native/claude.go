@@ -18,6 +18,7 @@ type claudeEnvelope struct {
 	Type        string          `json:"type"`
 	UUID        string          `json:"uuid"`
 	SessionID   string          `json:"sessionId"`
+	AgentID     string          `json:"agentId"`
 	CWD         string          `json:"cwd"`
 	Timestamp   string          `json:"timestamp"`
 	IsSidechain bool            `json:"isSidechain"`
@@ -50,10 +51,7 @@ func (a *claudeAdapter) Name() string { return "claude" }
 func (a *claudeAdapter) List(ctx context.Context) ([]Session, error) {
 	root := filepath.Join(a.home, "projects")
 	paths, err := filesUnder(root, func(path string) bool {
-		normalized := filepath.ToSlash(path)
-		base := filepath.Base(path)
-		return strings.HasSuffix(strings.ToLower(path), ".jsonl") &&
-			!strings.Contains(normalized, "/subagents/") && !strings.HasPrefix(base, "agent-")
+		return strings.HasSuffix(strings.ToLower(path), ".jsonl")
 	})
 	if err != nil {
 		return nil, err
@@ -67,7 +65,7 @@ func (a *claudeAdapter) List(ctx context.Context) ([]Session, error) {
 		if err != nil {
 			continue
 		}
-		parsed, err := parseClaudeTranscript(path, false)
+		parsed, err := parseClaudeTranscript(path, false, isClaudeSubagentPath(path))
 		if err != nil || parsed.threadID == "" {
 			continue
 		}
@@ -84,7 +82,7 @@ func (a *claudeAdapter) Get(_ context.Context, nativeID string) (Detail, error) 
 	if err != nil {
 		return Detail{}, err
 	}
-	parsed, err := parseClaudeTranscript(path, true)
+	parsed, err := parseClaudeTranscript(path, true, isClaudeSubagentPath(path))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return Detail{}, ErrNotFound
@@ -102,7 +100,7 @@ func (a *claudeAdapter) Delete(_ context.Context, nativeID string) error {
 	if err != nil {
 		return err
 	}
-	parsed, err := parseClaudeTranscript(path, false)
+	parsed, err := parseClaudeTranscript(path, false, isClaudeSubagentPath(path))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return ErrNotFound
@@ -140,7 +138,7 @@ func (a *claudeAdapter) Delete(_ context.Context, nativeID string) error {
 	return nil
 }
 
-func parseClaudeTranscript(path string, includeContent bool) (claudeParsed, error) {
+func parseClaudeTranscript(path string, includeContent, isSubagent bool) (claudeParsed, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return claudeParsed{}, err
@@ -150,6 +148,12 @@ func parseClaudeTranscript(path string, includeContent bool) (claudeParsed, erro
 	detail.Session.Origin = "Claude Code"
 	detail.Session.UpdatedAt = info.ModTime().UTC().Format(time.RFC3339Nano)
 	firstPrompt := ""
+	agentID := ""
+	parentThreadID := ""
+	if isSubagent {
+		agentID = strings.TrimPrefix(strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)), "agent-")
+		parentThreadID = claudeParentThreadID(path)
+	}
 	messageCount := 0
 	pending := make(map[string]int)
 	err = jsonLines(path, func(line json.RawMessage) error {
@@ -158,10 +162,15 @@ func parseClaudeTranscript(path string, includeContent bool) (claudeParsed, erro
 			detail.Warnings = append(detail.Warnings, "Skipped a malformed transcript line")
 			return nil
 		}
-		if envelope.IsSidechain {
+		if envelope.IsSidechain && !isSubagent {
 			return nil
 		}
-		if envelope.SessionID != "" {
+		if envelope.AgentID != "" {
+			agentID = envelope.AgentID
+		}
+		if isSubagent && parentThreadID == "" && envelope.SessionID != "" {
+			parentThreadID = envelope.SessionID
+		} else if envelope.SessionID != "" {
 			detail.Session.ThreadID = envelope.SessionID
 		}
 		if envelope.CWD != "" {
@@ -225,6 +234,11 @@ func parseClaudeTranscript(path string, includeContent bool) (claudeParsed, erro
 		return claudeParsed{}, err
 	}
 	threadID := detail.Session.ThreadID
+	if isSubagent {
+		threadID = firstNonEmpty(agentID, strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)))
+		detail.Session.ParentThreadID = parentThreadID
+		detail.Session.Agent = firstNonEmpty(agentID, "sub-agent")
+	}
 	if threadID == "" {
 		threadID = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 	}
@@ -232,6 +246,19 @@ func parseClaudeTranscript(path string, includeContent bool) (claudeParsed, erro
 	detail.Session.MessageCount = messageCount
 	detail.Session.Title = titleFallback("", cleanPrompt(firstPrompt), detail.Session.ProjectPath, threadID)
 	return claudeParsed{detail: detail, threadID: threadID}, nil
+}
+
+func isClaudeSubagentPath(path string) bool {
+	normalized := filepath.ToSlash(path)
+	return strings.Contains(normalized, "/subagents/") || strings.HasPrefix(filepath.Base(path), "agent-")
+}
+
+func claudeParentThreadID(path string) string {
+	parent := filepath.Dir(path)
+	if filepath.Base(parent) == "subagents" {
+		return filepath.Base(filepath.Dir(parent))
+	}
+	return ""
 }
 
 func claudeContent(raw json.RawMessage) (string, string, []ToolCall, map[string]string) {

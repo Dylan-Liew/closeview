@@ -202,14 +202,19 @@ func parseCodexRollout(path string, includeContent bool) (codexParsed, error) {
 		switch envelope.Type {
 		case "session_meta":
 			var meta struct {
-				ID         string `json:"id"`
-				SessionID  string `json:"session_id"`
-				Timestamp  string `json:"timestamp"`
-				CWD        string `json:"cwd"`
-				Originator string `json:"originator"`
+				ID             string          `json:"id"`
+				SessionID      string          `json:"session_id"`
+				ParentThreadID string          `json:"parent_thread_id"`
+				Timestamp      string          `json:"timestamp"`
+				CWD            string          `json:"cwd"`
+				Originator     string          `json:"originator"`
+				Source         json.RawMessage `json:"source"`
+				ThreadSource   string          `json:"thread_source"`
 			}
 			if json.Unmarshal(envelope.Payload, &meta) == nil {
 				detail.Session.ThreadID = firstNonEmpty(meta.ID, meta.SessionID)
+				detail.Session.ParentThreadID = meta.ParentThreadID
+				detail.Session.Agent = codexAgentLabel(meta.Source, meta.ThreadSource)
 				detail.Session.CreatedAt = firstNonEmpty(meta.Timestamp, envelope.Timestamp)
 				detail.Session.ProjectPath = meta.CWD
 				detail.Session.Origin = meta.Originator
@@ -248,7 +253,30 @@ func parseCodexRollout(path string, includeContent bool) (codexParsed, error) {
 		detail.Session.MessageCount = countCodexMessages(path)
 	}
 	detail.Session.Title = titleFallback("", cleanPrompt(firstPrompt), detail.Session.ProjectPath, detail.Session.ThreadID)
+	if detail.Session.ParentThreadID != "" && detail.Session.Agent == "guardian" {
+		detail.Session.Title = "Guardian review"
+	}
 	return codexParsed{detail: detail, threadID: detail.Session.ThreadID}, nil
+}
+
+func codexAgentLabel(source json.RawMessage, threadSource string) string {
+	var value struct {
+		Subagent map[string]string `json:"subagent"`
+	}
+	if json.Unmarshal(source, &value) == nil {
+		for kind, name := range value.Subagent {
+			if strings.TrimSpace(name) != "" {
+				return strings.TrimSpace(name)
+			}
+			if strings.TrimSpace(kind) != "" {
+				return strings.TrimSpace(kind)
+			}
+		}
+	}
+	if strings.Contains(strings.ToLower(threadSource), "guardian") {
+		return "guardian"
+	}
+	return ""
 }
 
 func parseCodexResponse(envelope codexEnvelope, includeContent bool, model string, detail *Detail, pending map[string]int, firstPrompt *string) {

@@ -43,9 +43,11 @@ CLOSEVIEW_HOST="$(tailscale ip -4)" docker compose up -d --build
 The Compose service mounts only the OpenCode, Codex, and Claude session stores.
 They are writable because confirmed deletion updates the native source.
 
-The viewer includes a unified history, source filters, search, stable deep links,
-structured messages, collapsed context and reasoning, tool calls, code, copy
-controls, prompt navigation, and explicit session deletion.
+The viewer includes a unified history, nested OpenCode, Codex, and Claude Code
+sub-sessions, source filters, search, stable deep links, structured messages,
+collapsed context and reasoning, tool calls, code, copy controls, prompt
+navigation, and explicit session deletion. Sub-sessions whose parent history is
+no longer available remain accessible in a collapsed detached group.
 
 Deleting in CloseView permanently removes the selected session from its native
 local store. The UI requires confirmation for every deletion. CloseView never

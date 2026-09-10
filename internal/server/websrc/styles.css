@@ -47,29 +47,44 @@
   .source-tab span { @apply text-[9px] tabular-nums opacity-60; }
   .source-tab.active { @apply bg-secondary text-foreground shadow-sm; }
   .session-list { @apply min-h-0 overflow-y-auto p-1.5; }
-  .session-row { @apply mb-0.5 flex w-full gap-2.5 rounded-lg border border-transparent p-2 text-left transition-colors hover:bg-white/[.035]; }
+  .session-tree-row { display: grid; grid-template-columns: 22px minmax(0, 1fr); padding-left: calc(var(--tree-depth) * 12px); }
+  .session-tree-toggle { @apply mb-0.5 grid min-h-[52px] place-items-center rounded-md text-muted-foreground transition-colors hover:bg-white/[.035] hover:text-foreground; }
+  .session-tree-toggle svg { @apply transition-transform; }
+  .session-tree-toggle svg.expanded { @apply rotate-90; }
+  .session-tree-spacer { @apply grid min-h-[52px] place-items-center text-muted-foreground/60; }
+  .detached-sessions { @apply mt-1 border-t pt-1; }
+  .detached-sessions-toggle { @apply flex h-9 w-full items-center gap-2 rounded-md px-2 text-[10px] text-muted-foreground transition-colors hover:bg-white/[.035] hover:text-foreground; }
+  .detached-sessions-toggle svg { @apply shrink-0 transition-transform; }
+  .detached-sessions-toggle svg.expanded { @apply rotate-90; }
+  .detached-sessions-toggle span { @apply min-w-0 flex-1 truncate text-left; }
+  .detached-sessions-toggle strong { @apply text-[9px] font-medium tabular-nums; }
+  .session-row { @apply mb-0.5 flex min-w-0 w-full gap-2.5 rounded-lg border border-transparent p-2 text-left transition-colors hover:bg-white/[.035]; }
   .session-row.active { @apply border-border bg-secondary/75 shadow-[inset_0_1px_0_rgba(255,255,255,.03)]; }
   .session-row-top { @apply flex min-w-0 items-start gap-2; }
   .session-row-top strong { @apply flex-1 truncate text-[13px] font-medium leading-5; }
   .session-row-top time { @apply pt-0.5 text-[9px] text-muted-foreground; }
   .session-row-meta { @apply mt-0.5 flex items-center gap-1.5 text-[10px] text-muted-foreground; }
-  .session-row-meta span { @apply max-w-[130px] truncate; }
+  .session-row-meta span { @apply max-w-[112px] truncate; }
   .session-row-meta i, .header-meta i { @apply size-0.5 rounded-full bg-muted-foreground/50; }
   .source-icon { @apply mt-0.5 grid size-7 shrink-0 place-items-center rounded-md border; }
   .source-opencode { @apply border-emerald-900/60 bg-emerald-950/40 text-emerald-300; }
   .source-codex { @apply border-sky-900/60 bg-sky-950/40 text-sky-300; }
   .source-claude { @apply border-orange-900/60 bg-orange-950/40 text-orange-300; }
   .sidebar-empty { @apply grid h-full place-content-center justify-items-center gap-2 text-xs text-muted-foreground; }
-  .session-main { @apply relative grid min-h-0 min-w-0 overflow-hidden bg-[#070708]; grid-template-rows: auto minmax(0,1fr); }
+  .session-main { @apply relative grid min-h-0 min-w-0 overflow-hidden bg-[#070708]; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0,1fr); }
   .error-banner { @apply absolute left-1/2 top-3 z-40 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-red-900/60 bg-red-950/90 px-3 py-2 text-xs text-red-200 shadow-xl; }
   .error-banner button { @apply ml-3 underline underline-offset-2; }
   .session-header { @apply flex h-[60px] min-h-[60px] items-center gap-3 border-b bg-background/95 px-4 backdrop-blur; }
   .header-source { @apply size-9; }
-  .session-header h1 { @apply truncate text-[15px] font-semibold tracking-[-.02em]; }
+  .header-title-row { @apply flex min-w-0 items-center gap-2; }
+  .session-header h1 { @apply min-w-0 flex-1 truncate text-[15px] font-semibold tracking-[-.02em]; }
+  .subsession-badge { @apply border-sky-900/60 bg-sky-950/30 text-sky-300; }
   .header-meta { @apply mt-1 flex min-w-0 items-center gap-2 text-[10px] text-muted-foreground; }
   .header-meta span { @apply max-w-[360px] truncate; }
-  .transcript { @apply min-h-0 overflow-x-hidden overflow-y-auto scroll-smooth; }
-  .transcript-inner { @apply mx-auto w-full max-w-[900px] px-5 py-8; }
+  .parent-session-link { @apply inline-flex min-w-0 max-w-[230px] shrink items-center gap-1 truncate rounded-sm text-sky-300 hover:text-sky-200; }
+  .parent-session-link svg { @apply shrink-0; }
+  .transcript { @apply min-h-0 min-w-0 w-full max-w-full overflow-x-hidden overflow-y-auto scroll-smooth; }
+  .transcript-inner { @apply mx-auto min-w-0 w-full max-w-[900px] px-5 py-8; }
   .message-card { @apply mb-7 grid scroll-mt-5 grid-cols-[30px_minmax(0,1fr)] gap-3; }
   .message-avatar { @apply grid size-[30px] place-items-center rounded-md border bg-secondary text-[9px] font-semibold uppercase text-muted-foreground; }
   .role-user .message-avatar { @apply border-blue-900/60 bg-blue-950/40 text-blue-300; }
@@ -139,7 +154,7 @@
     transition: transform 220ms var(--ease-out);
   }
   .session-sidebar.mobile-collapsed { display: grid; transform: translateX(-105%); }
-  .session-main { height: 100%; }
+  .session-main { width: 100%; max-width: 100vw; height: 100%; }
   .mobile-picker-close, .mobile-session-menu { display: inline-flex !important; }
   .mobile-sidebar-backdrop {
     position: fixed;
@@ -151,8 +166,22 @@
     transition: opacity 180ms var(--ease-out);
   }
   .mobile-sidebar-backdrop.open { display: block !important; opacity: 1; pointer-events: auto; }
-  .header-meta span:first-child { max-width: 150px; }
-  .transcript-inner { padding: 1rem .75rem; }
+  .session-header { width: 100%; min-width: 0; gap: .5rem; padding-inline: .5rem; overflow: hidden; }
+  .session-header-info { width: 0; }
+  .header-title-row { gap: .375rem; }
+  .session-header h1 { font-size: 13px; }
+  .header-meta { gap: .375rem; overflow: hidden; }
+  .header-meta span { min-width: 0; max-width: 110px; }
+  .parent-session-link { max-width: 120px; }
+  .source-badge { display: none; }
+  .transcript-inner { width: 100%; max-width: 100%; padding: .875rem .75rem 1.5rem; }
+  .message-card { grid-template-columns: 26px minmax(0, 1fr); gap: .5rem; margin-bottom: 1.25rem; }
+  .message-avatar { width: 26px; height: 26px; font-size: 8px; }
+  .message-heading { margin-bottom: .375rem; }
+  .message-content { font-size: 12px; line-height: 1.35rem; }
+  .message-content p, .reasoning-content p, .context-content p { overflow-wrap: anywhere; word-break: break-word; }
+  .message-content pre { max-width: 100%; padding: .625rem; font-size: 10px; line-height: 1.125rem; }
+  .reasoning-card, .context-card, .warning-card { margin-left: 34px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
