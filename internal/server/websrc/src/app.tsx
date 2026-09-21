@@ -354,17 +354,21 @@ function SessionTree({ node, activeID, expanded, forceExpanded, onToggle, onSele
   return (
     <div className="session-tree">
       <div className="session-tree-row" style={{ '--tree-depth': depth } as React.CSSProperties}>
-        {hasChildren ? (
-          <button
-            aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${node.session.title}`}
-            aria-expanded={isExpanded}
-            className="session-tree-toggle"
-            onClick={() => onToggle(node.session.id)}
-          >
-            <IconChevronRight size={14} className={cn(isExpanded && 'expanded')} />
-          </button>
-        ) : <span className="session-tree-spacer">{node.session.isSubsession && <IconGitBranch size={12} />}</span>}
-        <SessionRow session={node.session} active={node.session.id === activeID} onClick={() => onSelect(node.session.id)} />
+        <SessionRow
+          session={node.session}
+          active={node.session.id === activeID}
+          onClick={() => onSelect(node.session.id)}
+          leading={hasChildren ? (
+            <button
+              aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${node.session.title}`}
+              aria-expanded={isExpanded}
+              className="session-tree-toggle"
+              onClick={event => { event.stopPropagation(); onToggle(node.session.id) }}
+            >
+              <IconChevronRight size={14} className={cn(isExpanded && 'expanded')} />
+            </button>
+          ) : undefined}
+        />
       </div>
       {hasChildren && isExpanded && node.children.map(child => (
         <SessionTree
@@ -382,17 +386,23 @@ function SessionTree({ node, activeID, expanded, forceExpanded, onToggle, onSele
   )
 }
 
-function SessionRow({ session, active, onClick }: { session: Session; active: boolean; onClick: () => void }) {
+function SessionRow({ session, active, onClick, leading }: { session: Session; active: boolean; onClick: () => void; leading?: React.ReactNode }) {
   return (
-    <button className={cn('session-row', active && 'active')} onClick={onClick}>
-      <div className={cn('source-icon', `source-${session.source}`)}>{sourceIcon(session.source, 15)}</div>
+    <div
+      className={cn('session-row', active && 'active')}
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onClick() } }}
+    >
+      {leading ?? <div className={cn('source-icon', `source-${session.source}`)}>{sourceIcon(session.source, 15)}</div>}
       <div className="min-w-0 flex-1">
         <div className="session-row-top"><strong>{session.title || 'Untitled session'}</strong><time>{relativeTime(session.updatedAt || session.createdAt)}</time></div>
         {session.childCount > 0 && (
           <div className="session-row-meta"><span>{session.childCount} sub-session{session.childCount === 1 ? '' : 's'}</span></div>
         )}
       </div>
-    </button>
+    </div>
   )
 }
 
