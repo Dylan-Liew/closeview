@@ -78,6 +78,8 @@
   .header-title-row { @apply flex min-w-0 items-center gap-2; }
   .session-header h1 { @apply min-w-0 flex-1 truncate text-[15px] font-semibold tracking-[-.02em]; }
   .subsession-badge { @apply border-sky-900/60 bg-sky-950/30 text-sky-300; }
+  .source-badge { @apply gap-1 px-1.5; }
+  .source-badge svg { @apply shrink-0; }
   .header-meta { @apply mt-1 flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground; }
   .header-meta span { @apply max-w-[360px] truncate; }
   .parent-session-link { @apply inline-flex min-w-0 max-w-[230px] shrink items-center gap-1 truncate rounded-sm text-sky-300 hover:text-sky-200; }
@@ -147,6 +149,12 @@
 .tool-card summary strong { font-weight: 500; overflow-wrap: anywhere; min-width: 0; }
 .tool-icon { background: transparent; width: 18px; height: 18px; }
 .source-icon { border-color: transparent; background: transparent; color: hsl(var(--muted-foreground)); }
+/* Harness chip in the session header: quiet, icon-led, tinted per source.
+   Compound selectors keep the tint ahead of the badge variant utilities. */
+.source-badge.source-opencode { @apply border-emerald-900/60 bg-emerald-950/40 text-emerald-300; }
+.source-badge.source-codex { @apply border-sky-900/60 bg-sky-950/40 text-sky-300; }
+.source-badge.source-claude { @apply border-orange-900/60 bg-orange-950/40 text-orange-300; }
+.subsession-badge { color: #7dd3fc; }
 .header-meta { font-size: 11px; }
 .session-row-top time { flex-shrink: 0; }
 .session-row-meta { min-width: 0; overflow: hidden; }

@@ -417,7 +417,10 @@ function SessionHeader({ session, parent, onOpenNav, onSelectParent, onDelete }:
         <div className="header-title-row">
           <h1 title={session.title}>{session.title}</h1>
           {session.isSubsession && <Badge variant="outline" className="subsession-badge">Sub-session</Badge>}
-          <Badge variant="outline" className="source-badge">{sourceLabel(session.source)}</Badge>
+          <Badge variant="outline" className={cn('source-badge', `source-${session.source}`)}>
+            {sourceIcon(session.source, 12)}
+            {sourceLabel(session.source)}
+          </Badge>
         </div>
         <div className="header-meta">
           {parent && <><button className="parent-session-link" onClick={() => onSelectParent(parent.id)}><IconGitBranch size={11} />{parent.title}</button><i /></>}
