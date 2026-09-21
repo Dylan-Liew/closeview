@@ -75,12 +75,14 @@
   .error-banner button { @apply ml-3 underline underline-offset-2; }
   .session-header { @apply flex h-[60px] min-h-[60px] items-center gap-3 border-b bg-background/95 px-4 backdrop-blur; }
   .header-source { @apply size-9; }
-  .header-title-row { @apply flex min-w-0 items-center gap-2; }
-  .session-header h1 { @apply min-w-0 flex-1 truncate text-[15px] font-semibold tracking-[-.02em]; }
-  .subsession-badge { @apply border-sky-900/60 bg-sky-950/30 text-sky-300; }
-  .source-badge { @apply gap-1 px-1.5; }
+  .session-header-info { @apply flex min-w-0 flex-1 flex-col justify-center gap-1; }
+  .header-actions { @apply flex shrink-0 items-center gap-2; }
+  .header-title-row { @apply flex min-w-0 items-center; }
+  .session-header h1 { @apply min-w-0 flex-1 truncate text-[15px] font-semibold leading-[22px] tracking-[-.02em]; }
+  .subsession-badge { @apply h-5 border-sky-900/60 bg-sky-950/30 text-sky-300; }
+  .source-badge { @apply h-5 gap-1 px-1.5; }
   .source-badge svg { @apply shrink-0; }
-  .header-meta { @apply mt-1 flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground; }
+  .header-meta { @apply flex min-w-0 items-center gap-2 text-[11px] leading-4 text-muted-foreground; }
   .header-meta span { @apply max-w-[360px] truncate; }
   .parent-session-link { @apply inline-flex min-w-0 max-w-[230px] shrink items-center gap-1 truncate rounded-sm text-sky-300 hover:text-sky-200; }
   .parent-session-link svg { @apply shrink-0; }

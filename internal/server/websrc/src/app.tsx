@@ -413,26 +413,30 @@ function SessionHeader({ session, parent, onOpenNav, onSelectParent, onDelete }:
       <Button aria-label="Open session navigation" variant="ghost" size="icon" className="mobile-session-menu" onClick={onOpenNav}>
         <IconMenu2 size={19} />
       </Button>
-      <div className="session-header-info min-w-0 flex-1">
+      <div className="session-header-info">
         <div className="header-title-row">
           <h1 title={session.title}>{session.title}</h1>
-          {session.isSubsession && <Badge variant="outline" className="subsession-badge">Sub-session</Badge>}
-          <Badge variant="outline" className={cn('source-badge', `source-${session.source}`)}>
-            {sourceIcon(session.source, 12)}
-            {sourceLabel(session.source)}
-          </Badge>
         </div>
         <div className="header-meta">
-          {parent && <><button className="parent-session-link" onClick={() => onSelectParent(parent.id)}><IconGitBranch size={11} />{parent.title}</button><i /></>}
+          {parent && <button className="parent-session-link" onClick={() => onSelectParent(parent.id)}><IconGitBranch size={11} />{parent.title}</button>}
+          {parent && (session.projectPath || session.model) && <i />}
           {session.projectPath && <span title={session.projectPath}>{baseName(session.projectPath)}</span>}
-          {session.model && <><i /><span>{session.model}</span></>}
+          {session.projectPath && session.model && <i />}
+          {session.model && <span>{session.model}</span>}
         </div>
       </div>
-      <Tooltip label="Delete session">
-        <Button aria-label="Delete session" variant="ghost" size="icon" className="text-muted-foreground hover:bg-destructive/10 hover:text-red-300" onClick={onDelete}>
-          <IconTrash size={17} />
-        </Button>
-      </Tooltip>
+      <div className="header-actions">
+        {session.isSubsession && <Badge variant="outline" className="subsession-badge">Sub-session</Badge>}
+        <Badge variant="outline" className={cn('source-badge', `source-${session.source}`)}>
+          {sourceIcon(session.source, 12)}
+          {sourceLabel(session.source)}
+        </Badge>
+        <Tooltip label="Delete session">
+          <Button aria-label="Delete session" variant="ghost" size="icon" className="text-muted-foreground hover:bg-destructive/10 hover:text-red-300" onClick={onDelete}>
+            <IconTrash size={17} />
+          </Button>
+        </Tooltip>
+      </div>
     </header>
   )
 }
