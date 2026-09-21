@@ -583,7 +583,7 @@ function MessageCard({ message, source, tools }: { message: Message; source: Sou
           <strong>{message.role === 'assistant' ? sourceLabel(source) : roleLabel(message.role)}</strong>
           {message.createdAt && <time>{formatTime(message.createdAt)}</time>}
           <Tooltip label={copied ? 'Copied' : 'Copy message'}>
-            <Button aria-label="Copy message" variant="ghost" size="icon" className="ml-auto size-7 text-muted-foreground" onClick={async () => {
+            <Button aria-label="Copy message" variant="ghost" size="icon" className="ml-auto size-6 text-muted-foreground" onClick={async () => {
               await navigator.clipboard.writeText(message.content)
               setCopied(true)
               setTimeout(() => setCopied(false), 1000)
