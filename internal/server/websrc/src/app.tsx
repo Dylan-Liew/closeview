@@ -172,7 +172,6 @@ export function App() {
       <aside id="sessions-panel" className={cn('session-sidebar', mobilePickerOpen ? 'mobile-open' : 'mobile-collapsed')}>
         <PanelResize side="left" />
         <div className="brand-row">
-          <div className="brand-mark"><img src="/closeview.png" alt="" className="brand-logo" /></div>
           <div className="brand-name">CloseView</div>
           <Tooltip label="Refresh local sessions">
             <Button aria-label="Refresh local sessions" size="icon" variant="ghost" className="ml-auto size-8" onClick={() => void loadCatalog(true)} disabled={refreshing}>
@@ -195,7 +194,6 @@ export function App() {
             {visibleSourceTabs.map(item => (
               <button key={item} role="tab" aria-selected={source === item} className={cn('source-tab', source === item && 'active')} onClick={() => setSource(item)}>
                 {item === 'all' ? 'All' : sourceLabel(item)}
-                <span>{item === 'all' ? catalog.sessions.length : sourceCounts[item]}</span>
               </button>
             ))}
           </div>
@@ -268,9 +266,8 @@ export function App() {
         <PanelResize side="right" />
         <div className="outline-title">Prompts</div>
         <div className="outline-list">
-          {(detail?.messages ?? []).filter(message => message.role === 'user' && message.content.trim()).map((message, index) => (
-            <button key={message.id} onClick={() => document.getElementById(message.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
-              <span>{String(index + 1).padStart(2, '0')}</span>
+          {(detail?.messages ?? []).filter(message => message.role === 'user' && message.content.trim()).map(message => (
+            <button key={message.id} title={message.content} onClick={() => document.getElementById(message.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
               <strong>{firstLine(message.content)}</strong>
             </button>
           ))}
@@ -391,11 +388,9 @@ function SessionRow({ session, active, onClick }: { session: Session; active: bo
       <div className={cn('source-icon', `source-${session.source}`)}>{sourceIcon(session.source, 15)}</div>
       <div className="min-w-0 flex-1">
         <div className="session-row-top"><strong>{session.title || 'Untitled session'}</strong><time>{relativeTime(session.updatedAt || session.createdAt)}</time></div>
-        <div className="session-row-meta">
-          <span>{session.isSubsession ? session.agent || 'Sub-session' : baseName(session.projectPath) || sourceLabel(session.source)}</span>
-          {session.childCount > 0 && <><i /><span>{session.childCount} sub-session{session.childCount === 1 ? '' : 's'}</span></>}
-          {session.messageCount > 0 && <><i /> <span>{session.messageCount} messages</span></>}
-        </div>
+        {session.childCount > 0 && (
+          <div className="session-row-meta"><span>{session.childCount} sub-session{session.childCount === 1 ? '' : 's'}</span></div>
+        )}
       </div>
     </button>
   )
@@ -417,13 +412,13 @@ function SessionHeader({ session, parent, onOpenNav, onSelectParent, onDelete }:
         <div className="header-title-row">
           <h1 title={session.title}>{session.title}</h1>
         </div>
-        <div className="header-meta">
-          {parent && <button className="parent-session-link" onClick={() => onSelectParent(parent.id)}><IconGitBranch size={11} />{parent.title}</button>}
-          {parent && (session.projectPath || session.model) && <i />}
-          {session.projectPath && <span title={session.projectPath}>{baseName(session.projectPath)}</span>}
-          {session.projectPath && session.model && <i />}
-          {session.model && <span>{session.model}</span>}
-        </div>
+        {(parent || session.model) && (
+          <div className="header-meta">
+            {parent && <button className="parent-session-link" onClick={() => onSelectParent(parent.id)}><IconGitBranch size={11} />{parent.title}</button>}
+            {parent && session.model && <i />}
+            {session.model && <span>{session.model}</span>}
+          </div>
+        )}
       </div>
       <div className="header-actions">
         {session.isSubsession && <Badge variant="outline" className="subsession-badge">Sub-session</Badge>}
@@ -543,7 +538,7 @@ function Transcript({ detail }: { detail: SessionDetail }) {
           {search && <><span aria-live="polite">{matches.length ? `${matchIndex + 1}/${matches.length}` : 'No matches'}</span><button aria-label="Next match" disabled={!matches.length} onClick={() => setMatchIndex(index => (index + 1) % matches.length)}><IconChevronDown size={16} /></button><button aria-label="Clear search" onClick={() => setSearch('')}><IconX size={14} /></button></>}
         </div>
         <div className="conversation-totals" aria-label="Recorded session token usage">
-          {recorded ? <><span>Input <b>{formatNumber(input)}</b></span><span>Output <b>{formatNumber(output)}</b></span>{cached > 0 && <span>Cache read <b>{formatNumber(cached)}</b></span>}{totals.written > 0 && <span>Cache write <b>{formatNumber(totals.written)}</b></span>}{usage && usage.reasoning_output_tokens > 0 && <span>Reasoning <b>{formatNumber(usage.reasoning_output_tokens)}</b></span>}</> : <span>Token usage not recorded</span>}
+          {recorded ? <><span title={`Input: ${formatNumber(input)} tokens`}>Input <b>{formatTokens(input)}</b></span><span title={`Output: ${formatNumber(output)} tokens`}>Output <b>{formatTokens(output)}</b></span>{cached > 0 && <span title={`Cache read: ${formatNumber(cached)} tokens`}>Cache read <b>{formatTokens(cached)}</b></span>}{totals.written > 0 && <span title={`Cache write: ${formatNumber(totals.written)} tokens`}>Cache write <b>{formatTokens(totals.written)}</b></span>}{usage && usage.reasoning_output_tokens > 0 && <span title={`Reasoning: ${formatNumber(usage.reasoning_output_tokens)} tokens`}>Reasoning <b>{formatTokens(usage.reasoning_output_tokens)}</b></span>}</> : <span>Token usage not recorded</span>}
         </div>
       </div>
     <div className="transcript" id="transcript" ref={scrollRef} onScroll={event => {
@@ -632,7 +627,7 @@ function RichText({ text }: { text: string }) {
 function MessageUsage({ message }: { message: Message }) {
   if (message.role !== 'assistant') return null
   const fields = [['Input', message.tokensInput], ['Output', message.tokensOutput], ['Reasoning', message.tokensReasoning], ['Cache read', message.tokensCacheRead], ['Cache write', message.tokensCacheWrite]] as const
-  return <div className="message-usage">{message.model && <span className="usage-model">{message.model}</span>}{fields.filter(([, count]) => count > 0).map(([label, count]) => <span key={label}>{label} <b>{formatNumber(count)}</b></span>)}{message.cost > 0 && <span>${message.cost.toFixed(4)}</span>}</div>
+  return <div className="message-usage">{message.model && <span className="usage-model">{message.model}</span>}{fields.filter(([, count]) => count > 0).map(([label, count]) => <span key={label} title={`${label}: ${formatNumber(count)} tokens`}>{label} <b>{formatTokens(count)}</b></span>)}{message.cost > 0 && <span>${message.cost.toFixed(4)}</span>}</div>
 }
 
 function SessionListSkeleton() {
@@ -650,9 +645,9 @@ function sourceIcon(source: SourceName, size: number) {
 }
 function sourceLabel(source: string) { return source === 'opencode' ? 'OpenCode' : source === 'codex' ? 'Codex' : source === 'claude' ? 'Claude' : source }
 function roleLabel(role: string) { return role === 'user' ? 'You' : role === 'assistant' ? 'Assistant' : role === 'system' ? 'Context' : role === 'tool' ? 'Tool' : role || 'Message' }
-function baseName(path: string) { return path.split(/[\\/]/).filter(Boolean).pop() ?? '' }
 function firstLine(value: string) { return value.trim().split('\n').find(Boolean)?.slice(0, 90) || 'Prompt' }
 function formatNumber(value: number) { return new Intl.NumberFormat().format(value) }
+function formatTokens(value: number) { return new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(value) }
 function formatDate(value: string) { if (!value) return 'Unknown date'; const date = new Date(value); return Number.isNaN(date.valueOf()) ? value : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date) }
 function formatTime(value: string) { if (!value) return ''; const date = new Date(value); return Number.isNaN(date.valueOf()) ? '' : new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(date) }
 function relativeTime(value: string) {

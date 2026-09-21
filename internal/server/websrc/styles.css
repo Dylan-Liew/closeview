@@ -37,13 +37,10 @@
   .app-shell { display: grid; grid-template-columns: clamp(220px, var(--panel-left, 290px), min(440px, 30vw)) minmax(0, 1fr) clamp(170px, var(--panel-right, 210px), min(360px, 25vw)); height: 100vh; min-height: 0; }
   .session-sidebar { @apply grid min-h-0 border-r bg-[#0a0a0b]; grid-template-rows: auto auto minmax(0,1fr) auto; }
   .brand-row { @apply flex h-[60px] items-center gap-2.5 border-b px-3; }
-  .brand-mark { @apply grid size-6 shrink-0 place-items-center; }
-  .brand-logo { @apply size-5 object-contain; }
   .brand-name { @apply text-sm font-semibold tracking-[-.02em]; }
   .sidebar-controls { @apply space-y-2 border-b p-2; }
   .source-tabs { @apply grid gap-1; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
-  .source-tab { @apply flex h-7 items-center justify-center gap-1 rounded-md text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground; }
-  .source-tab span { @apply text-[11px] tabular-nums opacity-60; }
+  .source-tab { @apply flex h-7 items-center justify-center rounded-md text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground; }
   .source-tab.active { @apply bg-secondary text-foreground shadow-sm; }
   .session-list { @apply min-h-0 overflow-y-auto p-1.5; }
   .session-tree-row { display: grid; grid-template-columns: 22px minmax(0, 1fr); padding-left: calc(var(--tree-depth) * 12px); }
@@ -120,9 +117,8 @@
   .outline-panel { @apply grid min-h-0 border-l bg-[#0a0a0b]; grid-template-rows: auto minmax(0,1fr); }
   .outline-title { @apply flex h-[60px] items-center border-b px-4 text-xs font-semibold; }
   .outline-list { @apply min-h-0 overflow-y-auto p-2; }
-  .outline-list button { @apply mb-1 grid w-full grid-cols-[24px_minmax(0,1fr)] gap-1.5 rounded-md p-2 text-left hover:bg-accent; }
-  .outline-list button span { @apply text-[11px] tabular-nums text-muted-foreground; }
-  .outline-list button strong { @apply truncate text-[11px] font-normal text-foreground/80; }
+  .outline-list button { @apply mb-1 block w-full rounded-md p-2 text-left hover:bg-accent; }
+  .outline-list button strong { @apply block truncate text-[11px] font-normal text-foreground/80; }
   .outline-list p { @apply p-2 text-[11px] text-muted-foreground; }
   .main-empty { @apply col-span-full row-span-full grid place-content-center justify-items-center text-center; }
   .main-empty .empty-icon { @apply mb-4 grid size-11 place-items-center rounded-xl border bg-secondary text-muted-foreground; }
