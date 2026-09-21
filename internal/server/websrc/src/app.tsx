@@ -504,8 +504,24 @@ function sessionTreeContains(node: SessionNode, sessionID: string): boolean {
 function Transcript({ detail }: { detail: SessionDetail }) {
   const [search, setSearch] = useState('')
   const [matchIndex, setMatchIndex] = useState(0)
+  const [findOpen, setFindOpen] = useState(false)
   const [showLatest, setShowLatest] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const closeFind = useCallback(() => { setSearch(''); setFindOpen(false) }, [])
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target instanceof HTMLElement ? event.target : null
+      const typing = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable
+      if (((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f') || (event.key === '/' && !typing)) {
+        event.preventDefault()
+        setFindOpen(true)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+  useEffect(() => { if (findOpen) inputRef.current?.focus() }, [findOpen])
   const term = search.trim().toLocaleLowerCase()
   const matches = useMemo(() => term ? detail.messages.filter(message => message.content.toLocaleLowerCase().includes(term)) : [], [detail.messages, term])
   const activeMatch = matches[matchIndex]?.id
@@ -539,14 +555,21 @@ function Transcript({ detail }: { detail: SessionDetail }) {
   return (
     <div className="conversation">
       <div className="conversation-toolbar">
-        <div className="conversation-search">
-          <IconSearch size={14} aria-hidden="true" />
-          <input aria-label="Find in conversation" placeholder="Find in conversation…" value={search} onChange={event => { setSearch(event.target.value); setMatchIndex(0) }} onKeyDown={event => {
-            if (event.key === 'Escape') setSearch('')
-            if (event.key === 'Enter' && matches.length) setMatchIndex(index => (index + (event.shiftKey ? matches.length - 1 : 1)) % matches.length)
-          }} />
-          {search && <><span aria-live="polite">{matches.length ? `${matchIndex + 1}/${matches.length}` : 'No matches'}</span><button aria-label="Next match" disabled={!matches.length} onClick={() => setMatchIndex(index => (index + 1) % matches.length)}><IconChevronDown size={16} /></button><button aria-label="Clear search" onClick={() => setSearch('')}><IconX size={14} /></button></>}
-        </div>
+        {findOpen ? (
+          <div className="conversation-search">
+            <IconSearch size={13} aria-hidden="true" />
+            <input ref={inputRef} aria-label="Find in conversation" placeholder="Find…" value={search} onChange={event => { setSearch(event.target.value); setMatchIndex(0) }} onKeyDown={event => {
+              if (event.key === 'Escape') closeFind()
+              if (event.key === 'Enter' && matches.length) setMatchIndex(index => (index + (event.shiftKey ? matches.length - 1 : 1)) % matches.length)
+            }} />
+            {search && <><span aria-live="polite">{matches.length ? `${matchIndex + 1}/${matches.length}` : 'No matches'}</span><button aria-label="Next match" disabled={!matches.length} onClick={() => setMatchIndex(index => (index + 1) % matches.length)}><IconChevronDown size={14} /></button></>}
+            <button aria-label="Close search" onClick={closeFind}><IconX size={13} /></button>
+          </div>
+        ) : (
+          <Tooltip label="Find in conversation ( / )">
+            <button aria-label="Find in conversation" className="conversation-search-toggle" onClick={() => setFindOpen(true)}><IconSearch size={14} /></button>
+          </Tooltip>
+        )}
         <div className="conversation-totals" aria-label="Recorded session token usage">
           {recorded ? <><span title={`Input: ${formatNumber(input)} tokens`}>Input <b>{formatTokens(input)}</b></span><span title={`Output: ${formatNumber(output)} tokens`}>Output <b>{formatTokens(output)}</b></span>{cached > 0 && <span title={`Cache read: ${formatNumber(cached)} tokens`}>Cache read <b>{formatTokens(cached)}</b></span>}{totals.written > 0 && <span title={`Cache write: ${formatNumber(totals.written)} tokens`}>Cache write <b>{formatTokens(totals.written)}</b></span>}{usage && usage.reasoning_output_tokens > 0 && <span title={`Reasoning: ${formatNumber(usage.reasoning_output_tokens)} tokens`}>Reasoning <b>{formatTokens(usage.reasoning_output_tokens)}</b></span>}</> : <span>Token usage not recorded</span>}
         </div>
