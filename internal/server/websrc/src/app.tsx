@@ -172,6 +172,7 @@ export function App() {
       <aside id="sessions-panel" className={cn('session-sidebar', mobilePickerOpen ? 'mobile-open' : 'mobile-collapsed')}>
         <PanelResize side="left" />
         <div className="brand-row">
+          <img src="/closeview.svg" alt="" width={28} height={28} className="shrink-0" />
           <div className="brand-name">CloseView</div>
           <Tooltip label="Refresh local sessions">
             <Button aria-label="Refresh local sessions" size="icon" variant="ghost" className="ml-auto size-8" onClick={() => void loadCatalog(true)} disabled={refreshing}>
