@@ -37,18 +37,20 @@ func (a *openCodeAdapter) List(ctx context.Context) ([]Session, error) {
 		return nil, err
 	}
 	defer db.Close()
-	parentExpression := "''"
-	var hasParent int
-	if err := db.QueryRowContext(ctx, `select count(*) from pragma_table_info('session') where name = 'parent_id'`).Scan(&hasParent); err == nil && hasParent > 0 {
-		parentExpression = "coalesce(s.parent_id, '')"
+	sources, err := opencode.SessionSources(ctx, db)
+	if err != nil {
+		return nil, err
 	}
-	rows, err := db.QueryContext(ctx, `
-		select s.id, `+parentExpression+`, coalesce(s.title, ''), coalesce(s.directory, ''),
+	var queries []string
+	for _, source := range sources {
+		queries = append(queries, `
+		select s.id as id, `+source.Parent+`, coalesce(s.title, ''), coalesce(s.directory, ''),
 			coalesce(s.agent, ''), coalesce(s.model, ''),
-			coalesce(s.time_created, 0), coalesce(s.time_updated, 0),
-			(select count(*) from message m where m.session_id = s.id)
-		from session s
-		order by s.time_updated desc, s.id desc`)
+			coalesce(s.time_created, 0), coalesce(s.time_updated, 0) as updated,
+			(select count(*) from `+source.Messages+` m where m.session_id = s.id)
+		from `+source.Table+` s`+source.Filter)
+	}
+	rows, err := db.QueryContext(ctx, strings.Join(queries, " union all ")+` order by updated desc, id desc`)
 	if err != nil {
 		return nil, fmt.Errorf("read OpenCode sessions: %w", err)
 	}
@@ -106,6 +108,19 @@ func (a *openCodeAdapter) Delete(ctx context.Context, nativeID string) error {
 	}
 	defer db.Close()
 	db.SetMaxOpenConns(1)
+	var hasV2 int
+	if err := db.QueryRowContext(ctx, `select count(*) from sqlite_master where type='table' and name='session_v2'`).Scan(&hasV2); err != nil {
+		return err
+	}
+	if hasV2 > 0 {
+		var exists int
+		if err := db.QueryRowContext(ctx, `select count(*) from session_v2 where id=?`, nativeID).Scan(&exists); err != nil {
+			return err
+		}
+		if exists > 0 {
+			return deleteOpenCodeV2(ctx, nativeID)
+		}
+	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err

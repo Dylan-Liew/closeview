@@ -4,6 +4,10 @@ CloseView is a local web viewer for OpenCode, Codex, and Claude Code session
 history. It reads native local session stores directly—without invoking an agent
 CLI—and provides two session-level operations: view and delete.
 
+OpenCode v2 session and message projections are supported. CloseView still reads
+legacy v1 rows when present so a migrated database remains fully visible, while
+v2 deletions go through OpenCode's authenticated API to keep service state consistent.
+
 ## Build
 
 ```bash
@@ -26,7 +30,10 @@ CloseView binds to `127.0.0.1:3434` by default and automatically reads:
 - Claude Code: `~/.claude/projects`
 
 Override these locations with `CLOSEVIEW_OPENCODE_DB`,
-`CLOSEVIEW_CODEX_HOME`, or `CLOSEVIEW_CLAUDE_HOME`.
+`CLOSEVIEW_CODEX_HOME`, or `CLOSEVIEW_CLAUDE_HOME`. For OpenCode v2 deletion,
+set `CLOSEVIEW_OPENCODE_URL` and either `CLOSEVIEW_OPENCODE_PASSWORD` or
+`CLOSEVIEW_OPENCODE_PASSWORD_FILE`. The password file may be OpenCode v2's
+`~/.local/state/opencode/service.json` registration file.
 
 ### Docker
 
@@ -40,8 +47,9 @@ CGO_ENABLED=0 go build -o closeview ./cmd/closeview
 CLOSEVIEW_HOST="$(tailscale ip -4)" docker compose up -d --build
 ```
 
-The Compose service mounts only the OpenCode, Codex, and Claude session stores.
-They are writable because confirmed deletion updates the native source.
+The Compose service mounts the OpenCode, Codex, and Claude session stores plus
+OpenCode v2's service registration file. The session stores are writable because
+confirmed deletion updates the native source; the service registration is read-only.
 
 The viewer includes a unified history, nested OpenCode, Codex, and Claude Code
 sub-sessions, source filters, search, stable deep links, structured messages,

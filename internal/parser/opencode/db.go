@@ -21,6 +21,7 @@ type Options struct {
 }
 
 type sourceSession struct {
+	V2        bool
 	ID        string
 	Title     string
 	Directory string
@@ -56,7 +57,19 @@ func ParseDB(ctx context.Context, path string, opts Options) ([]store.NewSession
 	}
 	defer db.Close()
 
-	rows, err := db.QueryContext(ctx, `select id, coalesce(title, ''), coalesce(directory, ''), coalesce(agent, ''), coalesce(model, ''), coalesce(time_created, 0), coalesce(time_updated, 0) from session order by time_updated desc`)
+	sources, err := SessionSources(ctx, db)
+	if err != nil {
+		return nil, nil, err
+	}
+	var queries []string
+	for _, source := range sources {
+		v2 := "0"
+		if source.V2 {
+			v2 = "1"
+		}
+		queries = append(queries, `select `+v2+`, s.id, coalesce(s.title, ''), coalesce(s.directory, ''), coalesce(s.agent, ''), coalesce(s.model, ''), coalesce(s.time_created, 0), coalesce(s.time_updated, 0) as updated from `+source.Table+` s`+source.Filter)
+	}
+	rows, err := db.QueryContext(ctx, strings.Join(queries, " union all ")+` order by updated desc`)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -66,7 +79,7 @@ func ParseDB(ctx context.Context, path string, opts Options) ([]store.NewSession
 	var warnings []string
 	for rows.Next() {
 		var source sourceSession
-		if err := rows.Scan(&source.ID, &source.Title, &source.Directory, &source.Agent, &source.Model, &source.Created, &source.Updated); err != nil {
+		if err := rows.Scan(&source.V2, &source.ID, &source.Title, &source.Directory, &source.Agent, &source.Model, &source.Created, &source.Updated); err != nil {
 			return sessions, warnings, err
 		}
 		session, sessionWarnings, err := parseSession(ctx, db, path, source, opts)
@@ -81,7 +94,11 @@ func ParseDB(ctx context.Context, path string, opts Options) ([]store.NewSession
 }
 
 func parseSession(ctx context.Context, db *sql.DB, dbPath string, source sourceSession, opts Options) (store.NewSession, []string, error) {
-	messageRows, err := db.QueryContext(ctx, `select id, coalesce(json_extract(data,'$.role'), ''), coalesce(time_created, 0), data from message where session_id = ? order by time_created, id`, source.ID)
+	query := `select id, coalesce(json_extract(data,'$.role'), ''), coalesce(time_created, 0), data from message where session_id = ? order by time_created, id`
+	if source.V2 {
+		query = `select id, type, time_created, data from session_message where session_id = ? order by seq`
+	}
+	messageRows, err := db.QueryContext(ctx, query, source.ID)
 	if err != nil {
 		return store.NewSession{}, nil, err
 	}
@@ -94,7 +111,13 @@ func parseSession(ctx context.Context, db *sql.DB, dbPath string, source sourceS
 		if err := messageRows.Scan(&message.ID, &message.Role, &message.Created, &message.Data); err != nil {
 			return store.NewSession{}, warnings, err
 		}
-		parsed, err := parseMessageParts(ctx, db, source.ID, message)
+		var parsed store.NewMessage
+		var err error
+		if source.V2 {
+			parsed, err = parseV2Message(message)
+		} else {
+			parsed, err = parseMessageParts(ctx, db, source.ID, message)
+		}
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("%s/%s: %v", source.ID, message.ID, err))
 			continue
@@ -216,7 +239,7 @@ func parsePart(data string) (string, store.NewToolCall) {
 		}
 		return "Reasoning:\n" + text, store.NewToolCall{}
 	case "tool":
-		toolName := stringValue(part, "tool")
+		toolName := stringValue(part, "tool", "name")
 		state, _ := part["state"].(map[string]any)
 		input := ""
 		output := ""
@@ -232,6 +255,19 @@ func parsePart(data string) (string, store.NewToolCall) {
 				}
 			}
 			output = stringValue(state, "output", "error")
+			if parts, ok := state["content"].([]any); ok {
+				var texts []string
+				for _, value := range parts {
+					if item, ok := value.(map[string]any); ok {
+						if text := stringValue(item, "text"); text != "" {
+							texts = append(texts, text)
+						}
+					}
+				}
+				if len(texts) > 0 {
+					output = strings.Join(texts, "\n")
+				}
+			}
 			if output == "" {
 				if metadata, ok := state["metadata"].(map[string]any); ok {
 					output = stringValue(metadata, "output")
@@ -254,6 +290,10 @@ func parseMessageMetadata(data string) messageMetadata {
 		Model:    stringValue(raw, "modelID"),
 		Finish:   stringValue(raw, "finish"),
 		Cost:     floatValue(raw, "cost"),
+	}
+	if model, ok := raw["model"].(map[string]any); ok {
+		metadata.Provider = stringValue(model, "providerID")
+		metadata.Model = stringValue(model, "id")
 	}
 	if tokens, ok := raw["tokens"].(map[string]any); ok {
 		metadata.TokensInput = intValue(tokens, "input")

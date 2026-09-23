@@ -3,6 +3,8 @@ package native
 import (
 	"context"
 	"database/sql"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -92,6 +94,69 @@ func TestOpenCodeRelationships(t *testing.T) {
 	filteredChild := catalogSession(t, New(NewOpenCode(path)).List(context.Background(), "Child session", ""), "child")
 	if filteredChild.ParentID != parent.ID {
 		t.Fatalf("filtered child lost parent link: %+v", filteredChild)
+	}
+}
+
+func TestOpenCodeV2ListGetAndDeleteThroughService(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "opencode.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, statement := range []string{
+		`create table session_v2 (id text primary key, parent_id text, title text, directory text, agent text, model text, time_created integer, time_updated integer)`,
+		`create table session_message (id text primary key, session_id text, type text, seq integer, time_created integer, data text)`,
+		`insert into session_v2 values ('ses-v2', null, 'V2 session', '/tmp/v2', 'build', '{"providerID":"openai","id":"gpt-test"}', 1700000000000, 1700000001000)`,
+		`insert into session_message values ('msg-user', 'ses-v2', 'user', 1, 1700000000000, '{"text":"Hello v2"}')`,
+		`insert into session_message values ('msg-assistant', 'ses-v2', 'assistant', 2, 1700000001000, '{"model":{"providerID":"openai","id":"gpt-test"},"content":[{"type":"text","text":"Ready"},{"type":"tool","name":"bash","state":{"status":"completed","input":{"command":"true"},"output":"ok"}}]}')`,
+	} {
+		if _, err := db.Exec(statement); err != nil {
+			db.Close()
+			t.Fatal(err)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	deleted := ""
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		username, password, ok := r.BasicAuth()
+		if !ok || username != "opencode" || password != "secret" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if r.Method != http.MethodDelete {
+			http.Error(w, "method", http.StatusMethodNotAllowed)
+			return
+		}
+		deleted = strings.TrimPrefix(r.URL.Path, "/api/session/")
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	serviceFile := filepath.Join(root, "service.json")
+	if err := os.WriteFile(serviceFile, []byte(`{"url":"`+server.URL+`","password":"secret"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CLOSEVIEW_OPENCODE_URL", "")
+	t.Setenv("CLOSEVIEW_OPENCODE_PASSWORD", "")
+	t.Setenv("CLOSEVIEW_OPENCODE_PASSWORD_FILE", serviceFile)
+
+	adapter := NewOpenCode(path)
+	sessions, err := adapter.List(context.Background())
+	if err != nil || len(sessions) != 1 || sessions[0].MessageCount != 2 {
+		t.Fatalf("list v2: sessions=%+v err=%v", sessions, err)
+	}
+	detail, err := adapter.Get(context.Background(), "ses-v2")
+	if err != nil || len(detail.Messages) != 2 || detail.Messages[0].Content != "Hello v2" || len(detail.ToolCalls) != 1 {
+		t.Fatalf("get v2: detail=%+v err=%v", detail, err)
+	}
+	if err := adapter.Delete(context.Background(), "ses-v2"); err != nil {
+		t.Fatal(err)
+	}
+	if deleted != "ses-v2" {
+		t.Fatalf("v2 deletion did not reach service: %q", deleted)
 	}
 }
 
