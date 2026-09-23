@@ -137,6 +137,24 @@
 .message-heading time { font-size: 11px; }
 .message-content p:empty { display: none; }
 .message-content pre { border-color: hsl(var(--border) / .7); border-radius: 6px; }
+.markdown-content p { white-space: normal; overflow-wrap: anywhere; }
+.markdown-content > :not(:first-child) { margin-top: .75rem; }
+.markdown-content :is(h1, h2, h3, h4, h5, h6) { font-weight: 600; line-height: 1.3; }
+.markdown-content h1 { font-size: 1.4em; }
+.markdown-content h2 { font-size: 1.25em; }
+.markdown-content h3 { font-size: 1.1em; }
+.markdown-content :is(ul, ol) { padding-left: 1.5rem; }
+.markdown-content ul { list-style: disc; }
+.markdown-content ol { list-style: decimal; }
+.markdown-content li + li { margin-top: .25rem; }
+.markdown-content li > :is(ul, ol) { margin-top: .25rem; }
+.markdown-content blockquote { border-left: 2px solid hsl(var(--border)); padding-left: .75rem; color: hsl(var(--muted-foreground)); }
+.markdown-content a { color: #7dd3fc; text-decoration: underline; text-underline-offset: 2px; }
+.markdown-content :not(pre) > code { border-radius: 3px; background: hsl(var(--secondary)); padding: 1px 3px; font-family: monospace; }
+.markdown-table-wrap { max-width: 100%; overflow-x: auto; }
+.markdown-table-wrap table { min-width: 100%; border-collapse: collapse; }
+.markdown-table-wrap :is(th, td) { border: 1px solid hsl(var(--border)); padding: .4rem .6rem; text-align: left; vertical-align: top; }
+.markdown-table-wrap th { background: hsl(var(--secondary) / .65); font-weight: 600; }
 .message-usage { font-size: 11px; }
 .reasoning-card, .context-card { border: 0; background: transparent; }
 .reasoning-card summary, .context-card summary { padding: 8px 0; font-size: 12px; }
