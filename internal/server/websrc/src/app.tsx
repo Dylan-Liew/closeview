@@ -21,6 +21,7 @@ import { Badge } from './components/ui/badge'
 import { Button } from './components/ui/button'
 import { Input } from './components/ui/input'
 import { PanelResize } from './components/panel-resize'
+import { MarkdownContent } from './components/markdown'
 import { Skeleton } from './components/ui/skeleton'
 import {
   AlertDialog,
@@ -624,7 +625,9 @@ function MessageCard({ message, source, tools }: { message: Message; source: Sou
             }}>{copied ? <IconCheck size={14} /> : <IconCopy size={14} />}</Button>
           </Tooltip>
         </div>
-        <div className="message-content"><RichText text={message.content} /></div>
+        <div className={cn('message-content', (message.role === 'user' || message.role === 'assistant') && 'markdown-content')}>
+          {message.role === 'user' || message.role === 'assistant' ? <MarkdownContent text={message.content} /> : <RichText text={message.content} />}
+        </div>
         <MessageUsage message={message} />
         {tools.map(tool => <ToolCard key={tool.id} tool={tool} />)}
       </div>
