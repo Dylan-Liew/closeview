@@ -1,6 +1,8 @@
 services:
   closeview:
-    build: .
+    build:
+      context: .
+      network: host
     container_name: closeview
     restart: unless-stopped
     mem_limit: 256m
