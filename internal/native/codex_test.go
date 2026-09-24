@@ -4,13 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 )
 
 type fakeCodexRPC struct {
-	listCalls  []map[string]any
-	deletedIDs []string
-	closed     bool
+	listCalls   []map[string]any
+	deletedIDs  []string
+	turnListErr bool
+	closed      bool
 }
 
 func (f *fakeCodexRPC) Call(_ context.Context, method string, params, result any) error {
@@ -68,6 +70,9 @@ func (f *fakeCodexRPC) Call(_ context.Context, method string, params, result any
 			},
 		})
 	case "thread/turns/list":
+		if f.turnListErr {
+			return &codexRPCError{Code: -32600, Message: "invalid paginated history lineage"}
+		}
 		return assignCodexResult(result, map[string]any{
 			"data": []map[string]any{
 				{"id": "turn-1", "startedAt": 1767322, "completedAt": 1767333, "status": "completed"},
@@ -148,6 +153,21 @@ func TestCodexAppServerListRelationshipsAndDetail(t *testing.T) {
 	}
 	if detail.ToolCalls[0].MessageID != "agent-1" {
 		t.Fatalf("tool call was not attached to assistant message: %+v", detail.ToolCalls[0])
+	}
+}
+
+func TestCodexAppServerDetailContinuesWithoutTurnMetadata(t *testing.T) {
+	client := &fakeCodexRPC{turnListErr: true}
+	adapter := newCodexAdapter(client)
+	detail, err := adapter.Get(context.Background(), "thread-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.Messages) != 3 || len(detail.ToolCalls) != 1 {
+		t.Fatalf("item history was not loaded: %+v", detail)
+	}
+	if len(detail.Warnings) != 1 || !strings.Contains(detail.Warnings[0], "turn metadata") {
+		t.Fatalf("missing turn metadata warning: %+v", detail.Warnings)
 	}
 }
 

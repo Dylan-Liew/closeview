@@ -138,15 +138,19 @@ func (a *codexAdapter) Get(ctx context.Context, nativeID string) (Detail, error)
 		return Detail{}, fmt.Errorf("read Codex thread: %w", err)
 	}
 
-	turns, err := a.listTurns(ctx, nativeID)
-	if err != nil {
-		return Detail{}, err
+	turns, turnsErr := a.listTurns(ctx, nativeID)
+	if turnsErr != nil && ctx.Err() != nil {
+		return Detail{}, turnsErr
 	}
 	items, err := a.listItems(ctx, nativeID)
 	if err != nil {
 		return Detail{}, err
 	}
-	return codexDetail(read.Thread, turns, items), nil
+	detail := codexDetail(read.Thread, turns, items)
+	if turnsErr != nil {
+		addCodexWarning(&detail, "Codex turn metadata was unavailable; message timestamps may be missing")
+	}
+	return detail, nil
 }
 
 func (a *codexAdapter) Delete(ctx context.Context, nativeID string) error {
