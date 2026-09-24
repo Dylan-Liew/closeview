@@ -9,13 +9,14 @@ services:
     mem_reservation: 32m
     network_mode: host
     environment:
-      CLOSEVIEW_CODEX_HOME: /sessions/codex
+      # Codex state stores absolute rollout paths, so preserve the host path in the container.
+      CLOSEVIEW_CODEX_HOME: ${CODEX_HOME:-/home/dylan/.codex}
       CLOSEVIEW_CLAUDE_HOME: /sessions/claude
       CLOSEVIEW_OPENCODE_DB: /sessions/opencode/opencode.db
       CLOSEVIEW_OPENCODE_URL: ${CLOSEVIEW_OPENCODE_URL:-http://100.107.147.108:4096}
       CLOSEVIEW_OPENCODE_PASSWORD_FILE: /sessions/opencode-state/service.json
     volumes:
-      - ${CODEX_HOME:-/home/dylan/.codex}:/sessions/codex
+      - ${CODEX_HOME:-/home/dylan/.codex}:${CODEX_HOME:-/home/dylan/.codex}
       - ${CLAUDE_HOME:-/home/dylan/.claude}:/sessions/claude
       - ${OPENCODE_HOME:-/home/dylan/.local/share/opencode}:/sessions/opencode
       - ${OPENCODE_STATE_HOME:-/home/dylan/.local/state/opencode}:/sessions/opencode-state:ro
