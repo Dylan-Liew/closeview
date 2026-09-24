@@ -61,6 +61,11 @@ Deleting in CloseView permanently removes the selected session from its native
 local store. The UI requires confirmation for every deletion. CloseView never
 uses a bulk-delete route.
 
+For OpenCode v2, CloseView uses the native v2 session tables and delegates
+deletion to the OpenCode service, which also removes child sessions. Legacy
+v1 rows retained after migration are not listed or used as a fallback.
+A v1-only database continues to use the legacy adapter.
+
 ## Legacy imports
 
 The earlier user-selected file workflow remains available and uses CloseView's

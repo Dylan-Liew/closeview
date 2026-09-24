@@ -8,16 +8,12 @@ import (
 
 // SessionSource describes one supported, explicitly named OpenCode schema.
 type SessionSource struct {
-	Table, Messages, Parent, Filter string
-	V2                              bool
+	Table, Messages, Parent string
+	V2                      bool
 }
 
 func SessionSources(ctx context.Context, db *sql.DB) ([]SessionSource, error) {
 	var sources []SessionSource
-	var v2 int
-	if err := db.QueryRowContext(ctx, `select count(*) from sqlite_master where type='table' and name='session_v2'`).Scan(&v2); err != nil {
-		return nil, err
-	}
 	for _, source := range []SessionSource{{Table: "session_v2", Messages: "session_message", V2: true}, {Table: "session", Messages: "message"}} {
 		var exists int
 		if err := db.QueryRowContext(ctx, `select count(*) from sqlite_master where type='table' and name=?`, source.Table).Scan(&exists); err != nil {
@@ -34,10 +30,12 @@ func SessionSources(ctx context.Context, db *sql.DB) ([]SessionSource, error) {
 		if parent > 0 {
 			source.Parent = "coalesce(s.parent_id, '')"
 		}
-		if !source.V2 && v2 > 0 {
-			source.Filter = " where not exists (select 1 from session_v2 v where v.id=s.id)"
-		}
 		sources = append(sources, source)
+		// After migration, v1 rows are historical copies, not live sessions.
+		// Falling back to them resurrects sessions deleted through the v2 API.
+		if source.V2 {
+			break
+		}
 	}
 	if len(sources) == 0 {
 		return nil, fmt.Errorf("no supported OpenCode session tables")

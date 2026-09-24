@@ -48,7 +48,7 @@ func (a *openCodeAdapter) List(ctx context.Context) ([]Session, error) {
 			coalesce(s.agent, ''), coalesce(s.model, ''),
 			coalesce(s.time_created, 0), coalesce(s.time_updated, 0) as updated,
 			(select count(*) from `+source.Messages+` m where m.session_id = s.id)
-		from `+source.Table+` s`+source.Filter)
+		from `+source.Table+` s`)
 	}
 	rows, err := db.QueryContext(ctx, strings.Join(queries, " union all ")+` order by updated desc, id desc`)
 	if err != nil {
@@ -75,7 +75,7 @@ func (a *openCodeAdapter) List(ctx context.Context) ([]Session, error) {
 }
 
 func (a *openCodeAdapter) Get(ctx context.Context, nativeID string) (Detail, error) {
-	sessions, warnings, err := opencode.ParseDB(ctx, a.path, opencode.Options{})
+	sessions, warnings, err := opencode.ParseDB(ctx, a.path, opencode.Options{SessionID: nativeID})
 	if err != nil {
 		return Detail{}, err
 	}
@@ -117,9 +117,19 @@ func (a *openCodeAdapter) Delete(ctx context.Context, nativeID string) error {
 		if err := db.QueryRowContext(ctx, `select count(*) from session_v2 where id=?`, nativeID).Scan(&exists); err != nil {
 			return err
 		}
-		if exists > 0 {
-			return deleteOpenCodeV2(ctx, nativeID)
+		if exists == 0 {
+			return ErrNotFound
 		}
+		if err := deleteOpenCodeV2(ctx, nativeID); err != nil {
+			return err
+		}
+		if err := db.QueryRowContext(ctx, `select count(*) from session_v2 where id=?`, nativeID).Scan(&exists); err != nil {
+			return err
+		}
+		if exists != 0 {
+			return fmt.Errorf("OpenCode reported deletion but the session remains in its local store; check that CloseView and OpenCode use the same database")
+		}
+		return nil
 	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {

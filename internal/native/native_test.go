@@ -132,6 +132,18 @@ func TestOpenCodeV2ListGetAndDeleteThroughService(t *testing.T) {
 			return
 		}
 		deleted = strings.TrimPrefix(r.URL.Path, "/api/session/")
+		store, err := sql.Open("sqlite", path)
+		if err != nil {
+			t.Error(err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		defer store.Close()
+		if _, err := store.Exec(`delete from session_v2 where id=?`, deleted); err != nil {
+			t.Error(err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer server.Close()

@@ -282,7 +282,7 @@ export function App() {
           <div className="delete-icon"><IconTrash size={19} /></div>
           <AlertDialogTitle>Delete this {detail?.session.isSubsession ? 'sub-session' : `${detail ? sourceLabel(detail.session.source) : ''} session`}?</AlertDialogTitle>
           <AlertDialogDescription>
-            This permanently removes <strong className="text-foreground">{detail?.session.title}</strong> from its native local session store. This cannot be undone by CloseView.
+            This permanently removes <strong className="text-foreground">{detail?.session.title}</strong> from its native local session store. {detail?.session.source === 'opencode' && 'OpenCode may also delete its child sessions. '}This cannot be undone by CloseView.
           </AlertDialogDescription>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
@@ -581,7 +581,7 @@ function Transcript({ detail }: { detail: SessionDetail }) {
       setShowLatest(element.scrollHeight - element.scrollTop - element.clientHeight > 400)
     }}>
       <div className="transcript-inner">
-        {(detail.warnings ?? []).length > 0 && <div className="warning-card"><IconAlertCircle size={16} /> Some records could not be fully parsed.</div>}
+        {(detail.warnings ?? []).length > 0 && <div className="warning-card"><IconAlertCircle size={16} className="shrink-0" /><details className="min-w-0"><summary className="cursor-pointer">Some records in this session could not be fully parsed.</summary><ul className="mt-2 list-disc space-y-1 break-words pl-4">{detail.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></details></div>}
         {detail.messages.map(message => <div key={`${message.sequence}-${message.id}`} className={cn(activeMatch === message.id && 'search-match')}><MessageCard message={message} source={detail.session.source} tools={toolsByMessage.get(message.id) ?? []} /></div>)}
         {orphanTools.map(tool => <ToolCard key={tool.id} tool={tool} />)}
         {!detail.messages.length && !orphanTools.length && <div className="transcript-empty">This session has no viewable messages.</div>}

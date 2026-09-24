@@ -16,6 +16,7 @@ import (
 const Source = "opencode"
 
 type Options struct {
+	SessionID   string
 	Title       string
 	ProjectPath string
 }
@@ -62,14 +63,20 @@ func ParseDB(ctx context.Context, path string, opts Options) ([]store.NewSession
 		return nil, nil, err
 	}
 	var queries []string
+	var args []any
 	for _, source := range sources {
 		v2 := "0"
 		if source.V2 {
 			v2 = "1"
 		}
-		queries = append(queries, `select `+v2+`, s.id, coalesce(s.title, ''), coalesce(s.directory, ''), coalesce(s.agent, ''), coalesce(s.model, ''), coalesce(s.time_created, 0), coalesce(s.time_updated, 0) as updated from `+source.Table+` s`+source.Filter)
+		filter := ""
+		if opts.SessionID != "" {
+			filter = " where s.id = ?"
+			args = append(args, opts.SessionID)
+		}
+		queries = append(queries, `select `+v2+`, s.id, coalesce(s.title, ''), coalesce(s.directory, ''), coalesce(s.agent, ''), coalesce(s.model, ''), coalesce(s.time_created, 0), coalesce(s.time_updated, 0) as updated from `+source.Table+` s`+filter)
 	}
-	rows, err := db.QueryContext(ctx, strings.Join(queries, " union all ")+` order by updated desc`)
+	rows, err := db.QueryContext(ctx, strings.Join(queries, " union all ")+` order by updated desc`, args...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -126,9 +133,6 @@ func parseSession(ctx context.Context, db *sql.DB, dbPath string, source sourceS
 	}
 	if err := messageRows.Err(); err != nil {
 		return store.NewSession{}, warnings, err
-	}
-	if len(messages) == 0 {
-		warnings = append(warnings, source.ID+": OpenCode session has no messages")
 	}
 	messages = common.EnrichMessages(messages)
 
