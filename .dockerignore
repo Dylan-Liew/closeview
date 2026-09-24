@@ -1,3 +1,7 @@
 .git
+.env
+.playwright-cli
+PLAN.md
 closeview
 node_modules
+tmp

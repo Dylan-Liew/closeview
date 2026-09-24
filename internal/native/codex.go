@@ -3,452 +3,530 @@ package native
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 )
 
+var codexSourceKinds = []string{
+	"cli",
+	"vscode",
+	"exec",
+	"appServer",
+	"subAgent",
+	"subAgentReview",
+	"subAgentCompact",
+	"subAgentThreadSpawn",
+	"subAgentOther",
+	"unknown",
+}
+
 type codexAdapter struct {
-	home string
+	client codexRPC
 }
 
-type codexIndexEntry struct {
-	ID         string `json:"id"`
-	ThreadName string `json:"thread_name"`
-	UpdatedAt  string `json:"updated_at"`
+type codexThread struct {
+	ID             string `json:"id"`
+	ParentThreadID string `json:"parentThreadId"`
+	Preview        string `json:"preview"`
+	ModelProvider  string `json:"modelProvider"`
+	Model          string `json:"model"`
+	CreatedAt      int64  `json:"createdAt"`
+	UpdatedAt      int64  `json:"updatedAt"`
+	Cwd            string `json:"cwd"`
+	Originator     string `json:"originator"`
+	AgentNickname  string `json:"agentNickname"`
+	AgentRole      string `json:"agentRole"`
+	Name           string `json:"name"`
 }
 
-type codexEnvelope struct {
-	Type      string          `json:"type"`
-	Timestamp string          `json:"timestamp"`
-	Payload   json.RawMessage `json:"payload"`
+type codexThreadListResponse struct {
+	Data       []codexThread `json:"data"`
+	NextCursor string        `json:"nextCursor"`
 }
 
-type codexParsed struct {
-	detail   Detail
-	threadID string
+type codexThreadReadResponse struct {
+	Thread codexThread `json:"thread"`
+}
+
+type codexTurn struct {
+	ID          string `json:"id"`
+	StartedAt   int64  `json:"startedAt"`
+	CompletedAt int64  `json:"completedAt"`
+	Status      string `json:"status"`
+}
+
+type codexTurnListResponse struct {
+	Data       []codexTurn `json:"data"`
+	NextCursor string      `json:"nextCursor"`
+}
+
+type codexItemEnvelope struct {
+	TurnID string          `json:"turnId"`
+	Item   json.RawMessage `json:"item"`
+}
+
+type codexItemListResponse struct {
+	Data       []codexItemEnvelope `json:"data"`
+	NextCursor string              `json:"nextCursor"`
 }
 
 func NewCodex(home string) Adapter {
-	return &codexAdapter{home: home}
+	binary := strings.TrimSpace(os.Getenv("CLOSEVIEW_CODEX_BIN"))
+	if binary == "" {
+		binary = "codex"
+	}
+	return newCodexAdapter(newCodexRPCClient(binary, home))
+}
+
+func newCodexAdapter(client codexRPC) *codexAdapter {
+	return &codexAdapter{client: client}
 }
 
 func (a *codexAdapter) Name() string { return "codex" }
 
 func (a *codexAdapter) List(ctx context.Context) ([]Session, error) {
-	root := filepath.Join(a.home, "sessions")
-	paths, err := filesUnder(root, func(path string) bool {
-		return strings.HasSuffix(strings.ToLower(path), ".jsonl")
-	})
-	if err != nil {
-		return nil, err
-	}
-	index, _ := a.readIndex()
-	sessions := make([]Session, 0, len(paths))
-	for _, path := range paths {
-		if err := ctx.Err(); err != nil {
-			return nil, err
+	sessions := make([]Session, 0)
+	cursor := ""
+	seen := make(map[string]bool)
+	for {
+		params := map[string]any{
+			"limit":          100,
+			"sortKey":        "updated_at",
+			"sortDirection":  "desc",
+			"archived":       false,
+			"sourceKinds":    codexSourceKinds,
+			"useStateDbOnly": false,
 		}
-		relative, err := filepath.Rel(root, path)
-		if err != nil {
-			continue
+		if cursor != "" {
+			params["cursor"] = cursor
 		}
-		parsed, err := parseCodexRollout(path, false)
-		if err != nil {
-			continue
+		var page codexThreadListResponse
+		if err := a.client.Call(ctx, "thread/list", params, &page); err != nil {
+			return nil, fmt.Errorf("list Codex threads: %w", err)
 		}
-		session := parsed.detail.Session
-		session.NativeID = filepath.ToSlash(relative)
-		session.ThreadID = parsed.threadID
-		if entry, ok := index[parsed.threadID]; ok {
-			session.Title = titleFallback(entry.ThreadName, session.Title, session.ProjectPath, parsed.threadID)
-			if entry.UpdatedAt > session.UpdatedAt {
-				session.UpdatedAt = entry.UpdatedAt
-			}
+		for _, thread := range page.Data {
+			sessions = append(sessions, codexSession(thread))
 		}
-		sessions = append(sessions, session)
+		if page.NextCursor == "" {
+			break
+		}
+		if seen[page.NextCursor] {
+			return nil, fmt.Errorf("list Codex threads: app-server repeated pagination cursor")
+		}
+		seen[page.NextCursor] = true
+		cursor = page.NextCursor
 	}
 	return sessions, nil
 }
 
-func (a *codexAdapter) Get(_ context.Context, nativeID string) (Detail, error) {
-	path, err := safeSessionPath(filepath.Join(a.home, "sessions"), nativeID)
-	if err != nil {
-		return Detail{}, err
+func (a *codexAdapter) Get(ctx context.Context, nativeID string) (Detail, error) {
+	if strings.TrimSpace(nativeID) == "" {
+		return Detail{}, ErrNotFound
 	}
-	parsed, err := parseCodexRollout(path, true)
-	if err != nil {
-		if os.IsNotExist(err) {
+	var read codexThreadReadResponse
+	if err := a.client.Call(ctx, "thread/read", map[string]any{
+		"threadId":     nativeID,
+		"includeTurns": false,
+	}, &read); err != nil {
+		if codexIsNotFound(err) {
 			return Detail{}, ErrNotFound
 		}
+		return Detail{}, fmt.Errorf("read Codex thread: %w", err)
+	}
+
+	turns, err := a.listTurns(ctx, nativeID)
+	if err != nil {
 		return Detail{}, err
 	}
-	parsed.detail.Session.NativeID = nativeID
-	parsed.detail.Session.ThreadID = parsed.threadID
-	index, _ := a.readIndex()
-	if entry, ok := index[parsed.threadID]; ok {
-		parsed.detail.Session.Title = titleFallback(entry.ThreadName, parsed.detail.Session.Title, parsed.detail.Session.ProjectPath, parsed.threadID)
-		if entry.UpdatedAt > parsed.detail.Session.UpdatedAt {
-			parsed.detail.Session.UpdatedAt = entry.UpdatedAt
-		}
+	items, err := a.listItems(ctx, nativeID)
+	if err != nil {
+		return Detail{}, err
 	}
-	return parsed.detail, nil
+	return codexDetail(read.Thread, turns, items), nil
 }
 
 func (a *codexAdapter) Delete(ctx context.Context, nativeID string) error {
-	root := filepath.Join(a.home, "sessions")
-	path, err := safeSessionPath(root, nativeID)
-	if err != nil {
-		return err
+	if strings.TrimSpace(nativeID) == "" {
+		return ErrNotFound
 	}
-	parsed, err := parseCodexRollout(path, false)
-	if err != nil {
-		if os.IsNotExist(err) {
+	var result map[string]any
+	if err := a.client.Call(ctx, "thread/delete", map[string]any{
+		"threadId": nativeID,
+	}, &result); err != nil {
+		if codexIsNotFound(err) {
 			return ErrNotFound
 		}
-		return err
+		return fmt.Errorf("delete Codex thread: %w", err)
 	}
-	staged := filepath.Join(filepath.Dir(path), ".closeview-delete-"+filepath.Base(path)+".deleting")
-	if err := os.Rename(path, staged); err != nil {
-		return err
-	}
-	restore := true
-	defer func() {
-		if restore {
-			_ = os.Rename(staged, path)
-		}
-	}()
-	remaining, err := a.hasThread(ctx, parsed.threadID)
-	if err != nil {
-		return err
-	}
-	if !remaining && parsed.threadID != "" {
-		if err := rewriteJSONLinesWithout(filepath.Join(a.home, "session_index.jsonl"), func(line json.RawMessage) bool {
-			var entry codexIndexEntry
-			return json.Unmarshal(line, &entry) == nil && entry.ID == parsed.threadID
-		}); err != nil {
-			return err
-		}
-		if err := rewriteJSONLinesWithout(filepath.Join(a.home, "history.jsonl"), func(line json.RawMessage) bool {
-			var entry struct {
-				SessionID string `json:"session_id"`
-			}
-			return json.Unmarshal(line, &entry) == nil && entry.SessionID == parsed.threadID
-		}); err != nil {
-			return err
-		}
-	}
-	if err := os.Remove(staged); err != nil {
-		return err
-	}
-	restore = false
 	return nil
 }
 
-func (a *codexAdapter) hasThread(ctx context.Context, threadID string) (bool, error) {
-	paths, err := filesUnder(filepath.Join(a.home, "sessions"), func(path string) bool {
-		return strings.HasSuffix(strings.ToLower(path), ".jsonl")
-	})
-	if err != nil {
-		return false, err
-	}
-	for _, path := range paths {
-		if err := ctx.Err(); err != nil {
-			return false, err
-		}
-		parsed, err := parseCodexRollout(path, false)
-		if err == nil && parsed.threadID == threadID {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
-func (a *codexAdapter) readIndex() (map[string]codexIndexEntry, error) {
-	entries := make(map[string]codexIndexEntry)
-	err := jsonLines(filepath.Join(a.home, "session_index.jsonl"), func(line json.RawMessage) error {
-		var entry codexIndexEntry
-		if json.Unmarshal(line, &entry) == nil && entry.ID != "" {
-			entries[entry.ID] = entry
-		}
+func (a *codexAdapter) Close() error {
+	if a.client == nil {
 		return nil
-	})
-	if os.IsNotExist(err) {
-		return entries, nil
 	}
-	return entries, err
+	return a.client.Close()
 }
 
-func parseCodexRollout(path string, includeContent bool) (codexParsed, error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return codexParsed{}, err
-	}
-	detail := Detail{Messages: []Message{}, ToolCalls: []ToolCall{}, Warnings: []string{}}
-	detail.Session.UpdatedAt = info.ModTime().UTC().Format(time.RFC3339Nano)
-	currentModel := ""
-	firstPrompt := ""
-	fallback := []Message{}
-	pendingTools := make(map[string]int)
-	err = jsonLines(path, func(line json.RawMessage) error {
-		var envelope codexEnvelope
-		if err := json.Unmarshal(line, &envelope); err != nil {
-			detail.Warnings = append(detail.Warnings, "Skipped a malformed rollout line")
-			return nil
+func (a *codexAdapter) listTurns(ctx context.Context, threadID string) ([]codexTurn, error) {
+	turns := make([]codexTurn, 0)
+	cursor := ""
+	seen := make(map[string]bool)
+	for {
+		params := map[string]any{
+			"threadId":      threadID,
+			"limit":         100,
+			"sortDirection": "asc",
+			"itemsView":     "notLoaded",
 		}
-		switch envelope.Type {
-		case "session_meta":
-			var meta struct {
-				ID             string          `json:"id"`
-				SessionID      string          `json:"session_id"`
-				ParentThreadID string          `json:"parent_thread_id"`
-				Timestamp      string          `json:"timestamp"`
-				CWD            string          `json:"cwd"`
-				Originator     string          `json:"originator"`
-				Source         json.RawMessage `json:"source"`
-				ThreadSource   string          `json:"thread_source"`
+		if cursor != "" {
+			params["cursor"] = cursor
+		}
+		var page codexTurnListResponse
+		if err := a.client.Call(ctx, "thread/turns/list", params, &page); err != nil {
+			if codexIsNotFound(err) {
+				return nil, ErrNotFound
 			}
-			if json.Unmarshal(envelope.Payload, &meta) == nil {
-				detail.Session.ThreadID = firstNonEmpty(meta.ID, meta.SessionID)
-				detail.Session.ParentThreadID = meta.ParentThreadID
-				detail.Session.Agent = codexAgentLabel(meta.Source, meta.ThreadSource)
-				detail.Session.CreatedAt = firstNonEmpty(meta.Timestamp, envelope.Timestamp)
-				detail.Session.ProjectPath = meta.CWD
-				detail.Session.Origin = meta.Originator
-			}
-		case "turn_context":
-			var turn struct {
-				Model string `json:"model"`
-			}
-			if json.Unmarshal(envelope.Payload, &turn) == nil && turn.Model != "" {
-				currentModel = turn.Model
-				detail.Session.Model = turn.Model
-				detail.Session.Provider = "openai"
-			}
-		case "response_item":
-			parseCodexResponse(envelope, includeContent, currentModel, &detail, pendingTools, &firstPrompt)
-		case "event_msg":
-			if includeContent {
-				var event struct {
-					Type string `json:"type"`
-					Info *struct {
-						Total *TokenUsage `json:"total_token_usage"`
-					} `json:"info"`
-				}
-				if json.Unmarshal(envelope.Payload, &event) == nil && event.Type == "token_count" && event.Info != nil && event.Info.Total != nil {
-					detail.Usage = event.Info.Total
-				}
-			}
-			if message, ok := codexFallbackMessage(envelope, currentModel); ok {
-				fallback = append(fallback, message)
-			}
+			return nil, fmt.Errorf("list Codex turns: %w", err)
 		}
-		return nil
-	})
-	if err != nil {
-		return codexParsed{}, err
-	}
-	if len(detail.Messages) == 0 && includeContent {
-		for _, message := range fallback {
-			appendNativeMessage(&detail, message)
-			if firstPrompt == "" && message.Role == "user" {
-				firstPrompt = message.Content
-			}
+		turns = append(turns, page.Data...)
+		if page.NextCursor == "" {
+			return turns, nil
 		}
-	}
-	detail.Session.MessageCount = len(detail.Messages)
-	if !includeContent {
-		detail.Session.MessageCount = countCodexMessages(path)
-	}
-	detail.Session.Title = titleFallback("", cleanPrompt(firstPrompt), detail.Session.ProjectPath, detail.Session.ThreadID)
-	if detail.Session.ParentThreadID != "" && detail.Session.Agent == "guardian" {
-		detail.Session.Title = "Guardian review"
-	}
-	return codexParsed{detail: detail, threadID: detail.Session.ThreadID}, nil
-}
-
-func codexAgentLabel(source json.RawMessage, threadSource string) string {
-	var value struct {
-		Subagent map[string]string `json:"subagent"`
-	}
-	if json.Unmarshal(source, &value) == nil {
-		for kind, name := range value.Subagent {
-			if strings.TrimSpace(name) != "" {
-				return strings.TrimSpace(name)
-			}
-			if strings.TrimSpace(kind) != "" {
-				return strings.TrimSpace(kind)
-			}
+		if seen[page.NextCursor] {
+			return nil, fmt.Errorf("list Codex turns: app-server repeated pagination cursor")
 		}
-	}
-	if strings.Contains(strings.ToLower(threadSource), "guardian") {
-		return "guardian"
-	}
-	return ""
-}
-
-func parseCodexResponse(envelope codexEnvelope, includeContent bool, model string, detail *Detail, pending map[string]int, firstPrompt *string) {
-	var item struct {
-		ID      string            `json:"id"`
-		Type    string            `json:"type"`
-		Role    string            `json:"role"`
-		Name    string            `json:"name"`
-		CallID  string            `json:"call_id"`
-		Input   json.RawMessage   `json:"input"`
-		Output  json.RawMessage   `json:"output"`
-		Content []json.RawMessage `json:"content"`
-		Summary []json.RawMessage `json:"summary"`
-	}
-	if json.Unmarshal(envelope.Payload, &item) != nil {
-		return
-	}
-	switch item.Type {
-	case "message":
-		content := codexContent(item.Content)
-		if content == "" {
-			return
-		}
-		role := normalizeNativeRole(item.Role)
-		if role == "user" && looksLikeContext(content) {
-			role = "system"
-		}
-		if *firstPrompt == "" && role == "user" && !looksLikeContext(content) {
-			*firstPrompt = content
-		}
-		if includeContent {
-			appendNativeMessage(detail, Message{ID: item.ID, Role: role, Content: content, CreatedAt: envelope.Timestamp, Model: model, Provider: "openai"})
-		}
-	case "reasoning":
-		if !includeContent {
-			return
-		}
-		content := codexContent(item.Summary)
-		if content != "" {
-			appendNativeMessage(detail, Message{ID: item.ID, Role: "reasoning", Content: content, CreatedAt: envelope.Timestamp, Model: model, Provider: "openai"})
-		}
-	case "function_call", "custom_tool_call":
-		if !includeContent {
-			return
-		}
-		input := rawText(item.Input)
-		messageID := lastAssistantMessage(detail)
-		call := ToolCall{ID: firstNonEmpty(item.CallID, item.ID), MessageID: messageID, Name: item.Name, Kind: inferNativeToolKind(item.Name), Status: "running", Input: input}
-		detail.ToolCalls = append(detail.ToolCalls, call)
-		pending[item.CallID] = len(detail.ToolCalls) - 1
-	case "function_call_output", "custom_tool_call_output":
-		if !includeContent {
-			return
-		}
-		output := rawText(item.Output)
-		if index, ok := pending[item.CallID]; ok {
-			detail.ToolCalls[index].Output = output
-			detail.ToolCalls[index].Status = "completed"
-			return
-		}
-		messageID := lastAssistantMessage(detail)
-		detail.ToolCalls = append(detail.ToolCalls, ToolCall{ID: firstNonEmpty(item.CallID, item.ID), MessageID: messageID, Name: "tool", Kind: "unknown", Status: "completed", Output: output})
+		seen[page.NextCursor] = true
+		cursor = page.NextCursor
 	}
 }
 
-func codexFallbackMessage(envelope codexEnvelope, model string) (Message, bool) {
-	var event struct {
-		Type    string `json:"type"`
-		Message string `json:"message"`
+func (a *codexAdapter) listItems(ctx context.Context, threadID string) ([]codexItemEnvelope, error) {
+	items := make([]codexItemEnvelope, 0)
+	cursor := ""
+	seen := make(map[string]bool)
+	for {
+		params := map[string]any{
+			"threadId":      threadID,
+			"limit":         100,
+			"sortDirection": "asc",
+		}
+		if cursor != "" {
+			params["cursor"] = cursor
+		}
+		var page codexItemListResponse
+		if err := a.client.Call(ctx, "thread/items/list", params, &page); err != nil {
+			if codexIsNotFound(err) {
+				return nil, ErrNotFound
+			}
+			return nil, fmt.Errorf("list Codex items: %w", err)
+		}
+		items = append(items, page.Data...)
+		if page.NextCursor == "" {
+			return items, nil
+		}
+		if seen[page.NextCursor] {
+			return nil, fmt.Errorf("list Codex items: app-server repeated pagination cursor")
+		}
+		seen[page.NextCursor] = true
+		cursor = page.NextCursor
 	}
-	if json.Unmarshal(envelope.Payload, &event) != nil || event.Message == "" {
-		return Message{}, false
-	}
-	role := ""
-	switch event.Type {
-	case "user_message":
-		role = "user"
-	case "agent_message":
-		role = "assistant"
-	default:
-		return Message{}, false
-	}
-	return Message{Role: role, Content: event.Message, CreatedAt: envelope.Timestamp, Model: model, Provider: "openai"}, true
 }
 
-func codexContent(blocks []json.RawMessage) string {
-	var values []string
-	for _, block := range blocks {
-		var content struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		}
-		if json.Unmarshal(block, &content) != nil {
+func codexSession(thread codexThread) Session {
+	provider := firstNonEmpty(thread.ModelProvider, "openai")
+	return Session{
+		NativeID:       thread.ID,
+		ThreadID:       thread.ID,
+		ParentThreadID: thread.ParentThreadID,
+		Title:          titleFallback(thread.Name, cleanPrompt(thread.Preview), thread.Cwd, thread.ID),
+		ProjectPath:    thread.Cwd,
+		CreatedAt:      codexTime(thread.CreatedAt),
+		UpdatedAt:      codexTime(thread.UpdatedAt),
+		Provider:       provider,
+		Model:          thread.Model,
+		Agent:          firstNonEmpty(thread.AgentRole, thread.AgentNickname),
+		Origin:         firstNonEmpty(thread.Originator, "Codex"),
+	}
+}
+
+func codexDetail(thread codexThread, turns []codexTurn, items []codexItemEnvelope) Detail {
+	detail := Detail{
+		Session:   codexSession(thread),
+		Messages:  []Message{},
+		ToolCalls: []ToolCall{},
+		Warnings:  []string{},
+	}
+	turnTimes := make(map[string]codexTurn, len(turns))
+	for _, turn := range turns {
+		turnTimes[turn.ID] = turn
+	}
+	for _, envelope := range items {
+		var item map[string]any
+		if err := json.Unmarshal(envelope.Item, &item); err != nil {
+			addCodexWarning(&detail, "Skipped a malformed Codex history item")
 			continue
 		}
-		switch content.Type {
-		case "input_text", "output_text", "text", "summary_text":
-			if strings.TrimSpace(content.Text) != "" {
-				values = append(values, content.Text)
+		appendCodexItem(&detail, turnTimes[envelope.TurnID], item)
+	}
+	detail.Session.MessageCount = len(detail.Messages)
+	return detail
+}
+
+func appendCodexItem(detail *Detail, turn codexTurn, item map[string]any) {
+	itemType := codexString(item, "type")
+	id := codexString(item, "id")
+	model := detail.Session.Model
+	provider := detail.Session.Provider
+	appendMessage := func(role, content, finish string) {
+		if strings.TrimSpace(content) == "" {
+			return
+		}
+		createdAt := codexTime(turn.StartedAt)
+		if role == "assistant" || role == "reasoning" {
+			createdAt = codexTime(firstNonZero(turn.CompletedAt, turn.StartedAt))
+		}
+		appendNativeMessage(detail, Message{
+			ID:        id,
+			Role:      role,
+			Content:   content,
+			CreatedAt: createdAt,
+			Provider:  provider,
+			Model:     model,
+			Finish:    finish,
+		})
+	}
+	appendTool := func(name, kind, status string, input, output any) {
+		if name == "" {
+			name = "tool"
+		}
+		detail.ToolCalls = append(detail.ToolCalls, ToolCall{
+			ID:        firstNonEmpty(id, fmt.Sprintf("tool-%d", len(detail.ToolCalls)+1)),
+			MessageID: lastAssistantMessage(detail),
+			Sequence:  len(detail.ToolCalls) + 1,
+			Name:      name,
+			Kind:      firstNonEmpty(kind, inferNativeToolKind(name)),
+			Status:    codexToolStatus(status),
+			Input:     rawText(input),
+			Output:    rawText(output),
+		})
+	}
+
+	switch itemType {
+	case "userMessage":
+		content := codexContentText(item["content"])
+		role := "user"
+		if looksLikeContext(content) {
+			role = "system"
+		}
+		appendMessage(role, content, "")
+	case "agentMessage":
+		appendMessage("assistant", codexString(item, "text"), codexString(item, "phase"))
+	case "hookPrompt":
+		var fragments []struct {
+			Text string `json:"text"`
+		}
+		if raw, ok := item["fragments"]; ok {
+			encoded, _ := json.Marshal(raw)
+			_ = json.Unmarshal(encoded, &fragments)
+		}
+		values := make([]string, 0, len(fragments))
+		for _, fragment := range fragments {
+			values = append(values, fragment.Text)
+		}
+		appendMessage("system", strings.Join(values, "\n\n"), "")
+	case "reasoning":
+		content := strings.Join(append(codexStringList(item["content"]), codexStringList(item["summary"])...), "\n\n")
+		appendMessage("reasoning", content, "")
+	case "plan":
+		appendMessage("assistant", codexString(item, "text"), "plan")
+	case "contextCompaction":
+		appendMessage("system", "Context compacted", "")
+	case "enteredReviewMode":
+		appendMessage("system", "Review mode: "+codexString(item, "review"), "")
+	case "exitedReviewMode":
+		appendMessage("system", "Review complete: "+codexString(item, "review"), "")
+	case "subAgentActivity":
+		appendMessage("system", fmt.Sprintf("Subagent %s: %s", codexString(item, "kind"), codexString(item, "agentPath")), "")
+	case "functionCallOutput":
+		name := firstNonEmpty(codexString(item, "namespace"), codexString(item, "name"), "tool")
+		appendTool(name, "unknown", "completed", nil, item["output"])
+	case "commandExecution":
+		output := codexString(item, "aggregatedOutput")
+		if output == "" {
+			if exitCode, ok := codexInt(item, "exitCode"); ok {
+				output = fmt.Sprintf("exit code %d", exitCode)
 			}
-		case "input_image":
-			values = append(values, "[Image]")
+		}
+		appendTool("shell", "shell", codexString(item, "status"), codexString(item, "command"), output)
+	case "fileChange":
+		appendTool("file", "file_write", codexString(item, "status"), item["changes"], codexString(item, "status"))
+	case "mcpToolCall":
+		name := strings.Trim(strings.Join([]string{codexString(item, "server"), codexString(item, "tool")}, "/"), "/")
+		output := any(item["result"])
+		if codexIsEmpty(item["result"]) && !codexIsEmpty(item["error"]) {
+			output = item["error"]
+		}
+		appendTool(name, "mcp", codexString(item, "status"), item["arguments"], output)
+	case "dynamicToolCall":
+		name := strings.Trim(strings.Join([]string{codexString(item, "namespace"), codexString(item, "tool")}, "/"), "/")
+		appendTool(name, "dynamic", codexString(item, "status"), item["arguments"], item["contentItems"])
+	case "collabAgentToolCall":
+		input := map[string]any{
+			"prompt":            codexString(item, "prompt"),
+			"receiverThreadIds": item["receiverThreadIds"],
+			"senderThreadId":    codexString(item, "senderThreadId"),
+		}
+		appendTool(codexString(item, "tool"), "agent", codexString(item, "status"), input, item["agentsStates"])
+	case "webSearch":
+		appendTool("web_search", "search", "completed", codexString(item, "query"), item["results"])
+	case "imageView":
+		appendTool("image", "file_read", "completed", codexString(item, "path"), nil)
+	case "sleep":
+		input := map[string]any{"durationMs": item["durationMs"]}
+		appendTool("sleep", "wait", "completed", input, "completed")
+	case "imageGeneration":
+		input := firstNonEmpty(codexString(item, "revisedPrompt"), codexString(item, "prompt"))
+		output := any(item["result"])
+		if codexIsEmpty(output) {
+			output = item["savedPath"]
+		}
+		appendTool("image_generation", "image", codexString(item, "status"), input, output)
+	default:
+		if itemType != "" {
+			addCodexWarning(detail, "Skipped unsupported Codex item type: "+itemType)
 		}
 	}
-	return strings.TrimSpace(strings.Join(values, "\n\n"))
 }
 
-func appendNativeMessage(detail *Detail, message Message) {
-	message.Sequence = len(detail.Messages) + 1
-	if message.ID == "" {
-		message.ID = fmt.Sprintf("message-%d", message.Sequence)
+func codexContentText(value any) string {
+	if text, ok := value.(string); ok {
+		return text
 	}
-	detail.Messages = append(detail.Messages, message)
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return ""
+	}
+	var blocks []map[string]any
+	if json.Unmarshal(raw, &blocks) != nil {
+		return ""
+	}
+	parts := make([]string, 0, len(blocks))
+	for _, block := range blocks {
+		if text, ok := block["text"].(string); ok && strings.TrimSpace(text) != "" {
+			parts = append(parts, text)
+			continue
+		}
+		blockType := strings.ToLower(codexString(block, "type"))
+		if strings.Contains(blockType, "image") {
+			parts = append(parts, "[Image]")
+		}
+	}
+	return strings.Join(parts, "\n\n")
 }
 
-func lastAssistantMessage(detail *Detail) string {
-	for index := len(detail.Messages) - 1; index >= 0; index-- {
-		if detail.Messages[index].Role == "assistant" {
-			return detail.Messages[index].ID
-		}
-	}
-	if len(detail.Messages) > 0 {
-		return detail.Messages[len(detail.Messages)-1].ID
-	}
-	return ""
-}
-
-func countCodexMessages(path string) int {
-	count := 0
-	_ = jsonLines(path, func(line json.RawMessage) error {
-		var envelope codexEnvelope
-		if json.Unmarshal(line, &envelope) != nil || envelope.Type != "response_item" {
-			return nil
-		}
-		var item struct {
-			Type    string            `json:"type"`
-			Content []json.RawMessage `json:"content"`
-			Summary []json.RawMessage `json:"summary"`
-		}
-		if json.Unmarshal(envelope.Payload, &item) == nil && ((item.Type == "message" && codexContent(item.Content) != "") || (item.Type == "reasoning" && codexContent(item.Summary) != "")) {
-			count++
-		}
+func codexStringList(value any) []string {
+	raw, err := json.Marshal(value)
+	if err != nil {
 		return nil
-	})
-	return count
+	}
+	var values []string
+	if json.Unmarshal(raw, &values) != nil {
+		return nil
+	}
+	return values
 }
 
-func rawText(value json.RawMessage) string {
-	if len(value) == 0 || string(value) == "null" {
+func codexString(item map[string]any, key string) string {
+	value, _ := item[key].(string)
+	return value
+}
+
+func codexInt(item map[string]any, key string) (int64, bool) {
+	value, ok := item[key].(float64)
+	return int64(value), ok
+}
+
+func codexIsEmpty(value any) bool {
+	if value == nil {
+		return true
+	}
+	raw, err := json.Marshal(value)
+	return err != nil || string(raw) == "null" || string(raw) == "{}" || string(raw) == "[]"
+}
+
+func codexToolStatus(status string) string {
+	switch strings.ToLower(status) {
+	case "completed", "succeeded", "success":
+		return "completed"
+	case "failed", "declined", "interrupted", "errored", "shutdown", "notfound":
+		return "failed"
+	case "inprogress", "running":
+		return "running"
+	case "":
+		return "unknown"
+	default:
+		return strings.ToLower(status)
+	}
+}
+
+func codexTime(seconds int64) string {
+	if seconds <= 0 {
+		return ""
+	}
+	return time.Unix(seconds, 0).UTC().Format(time.RFC3339)
+}
+
+func firstNonZero(values ...int64) int64 {
+	for _, value := range values {
+		if value != 0 {
+			return value
+		}
+	}
+	return 0
+}
+
+func codexIsNotFound(err error) bool {
+	if errors.Is(err, ErrNotFound) {
+		return true
+	}
+	var rpcErr *codexRPCError
+	if errors.As(err, &rpcErr) {
+		message := strings.ToLower(rpcErr.Message)
+		return strings.Contains(message, "not found") || strings.Contains(message, "no rollout found")
+	}
+	return false
+}
+
+func addCodexWarning(detail *Detail, warning string) {
+	if len(detail.Warnings) < 25 {
+		detail.Warnings = append(detail.Warnings, warning)
+		return
+	}
+	if len(detail.Warnings) == 25 {
+		detail.Warnings = append(detail.Warnings, "Additional Codex history warnings were suppressed")
+	}
+}
+
+func rawText(value any) string {
+	raw, err := json.Marshal(value)
+	if err != nil || string(raw) == "null" {
 		return ""
 	}
 	var text string
-	if json.Unmarshal(value, &text) == nil {
+	if json.Unmarshal(raw, &text) == nil {
 		return text
 	}
 	var decoded any
-	if json.Unmarshal(value, &decoded) == nil {
+	if json.Unmarshal(raw, &decoded) == nil {
 		pretty, _ := json.MarshalIndent(decoded, "", "  ")
 		return string(pretty)
 	}
-	return string(value)
+	return string(raw)
 }
 
 func safeSessionPath(root, nativeID string) (string, error) {
@@ -522,6 +600,22 @@ func inferNativeToolKind(name string) string {
 	}
 }
 
-func sortMessages(messages []Message) {
-	sort.SliceStable(messages, func(i, j int) bool { return messages[i].Sequence < messages[j].Sequence })
+func appendNativeMessage(detail *Detail, message Message) {
+	message.Sequence = len(detail.Messages) + 1
+	if message.ID == "" {
+		message.ID = fmt.Sprintf("message-%d", message.Sequence)
+	}
+	detail.Messages = append(detail.Messages, message)
+}
+
+func lastAssistantMessage(detail *Detail) string {
+	for index := len(detail.Messages) - 1; index >= 0; index-- {
+		if detail.Messages[index].Role == "assistant" {
+			return detail.Messages[index].ID
+		}
+	}
+	if len(detail.Messages) > 0 {
+		return detail.Messages[len(detail.Messages)-1].ID
+	}
+	return ""
 }

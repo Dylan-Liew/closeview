@@ -69,7 +69,7 @@ type Detail struct {
 	Usage     *TokenUsage `json:"usage,omitempty"`
 }
 
-// Codex reports cumulative totals; cached input and reasoning are subsets.
+// Token counters use provider-reported totals; cached input and reasoning are subsets.
 type TokenUsage struct {
 	Input     int `json:"input_tokens"`
 	Output    int `json:"output_tokens"`
@@ -109,6 +109,18 @@ func New(adapters ...Adapter) *Manager {
 		m.order = append(m.order, name)
 	}
 	return m
+}
+
+func (m *Manager) Close() error {
+	var closeErrors []error
+	for _, name := range m.order {
+		if closer, ok := m.adapters[name].(interface{ Close() error }); ok {
+			if err := closer.Close(); err != nil {
+				closeErrors = append(closeErrors, fmt.Errorf("close %s adapter: %w", name, err))
+			}
+		}
+	}
+	return errors.Join(closeErrors...)
 }
 
 func NewDefault() (*Manager, error) {

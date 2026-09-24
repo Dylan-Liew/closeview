@@ -118,6 +118,7 @@ export function App() {
     claude: catalog.sessions.filter(session => session.source === 'claude').length,
   }), [catalog.sessions])
   const visibleSourceTabs = sourceOrder.filter(item => item === 'all' || sourceCounts[item] > 0)
+  const sourceErrors = catalog.sources.filter(source => !source.available && source.error)
 
   useEffect(() => {
     if (source !== 'all' && sourceCounts[source] === 0) setSource('all')
@@ -241,6 +242,9 @@ export function App() {
       />
 
       <main className="session-main">
+        {sourceErrors.map(source => (
+          <div key={source.name} className="error-banner"><IconAlertCircle size={16} /><span>{sourceLabel(source.name)} unavailable: {source.error}</span></div>
+        ))}
         {error && (
           <div className="error-banner"><IconAlertCircle size={16} /><span>{error}</span><button onClick={() => setError('')}>Dismiss</button></div>
         )}
@@ -282,7 +286,7 @@ export function App() {
           <div className="delete-icon"><IconTrash size={19} /></div>
           <AlertDialogTitle>Delete this {detail?.session.isSubsession ? 'sub-session' : `${detail ? sourceLabel(detail.session.source) : ''} session`}?</AlertDialogTitle>
           <AlertDialogDescription>
-            This permanently removes <strong className="text-foreground">{detail?.session.title}</strong> from its native local session store. {detail?.session.source === 'opencode' && 'OpenCode may also delete its child sessions. '}This cannot be undone by CloseView.
+            This permanently removes <strong className="text-foreground">{detail?.session.title}</strong> from its native local session store. {(detail?.session.childCount ?? 0) > 0 && 'Child sessions may also be deleted. '}This cannot be undone by CloseView.
           </AlertDialogDescription>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>

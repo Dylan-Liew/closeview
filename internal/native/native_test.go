@@ -172,52 +172,6 @@ func TestOpenCodeV2ListGetAndDeleteThroughService(t *testing.T) {
 	}
 }
 
-func TestCodexListGetDelete(t *testing.T) {
-	home := t.TempDir()
-	rolloutDir := filepath.Join(home, "sessions", "2026", "01", "02")
-	if err := os.MkdirAll(rolloutDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	rollout := filepath.Join(rolloutDir, "rollout-test.jsonl")
-	writeFixture(t, rollout, strings.Join([]string{
-		`{"timestamp":"2026-01-02T03:04:05Z","type":"session_meta","payload":{"id":"thread-test","timestamp":"2026-01-02T03:04:05Z","cwd":"/tmp/codex","originator":"Codex"}}`,
-		`{"timestamp":"2026-01-02T03:04:06Z","type":"turn_context","payload":{"model":"gpt-test"}}`,
-		`{"timestamp":"2026-01-02T03:04:07Z","type":"response_item","payload":{"id":"u1","type":"message","role":"user","content":[{"type":"input_text","text":"Build the viewer"}]}}`,
-		`{"timestamp":"2026-01-02T03:04:08Z","type":"response_item","payload":{"id":"a1","type":"message","role":"assistant","content":[{"type":"output_text","text":"Working on it"}]}}`,
-		`{"timestamp":"2026-01-02T03:04:09Z","type":"response_item","payload":{"id":"c1","type":"custom_tool_call","call_id":"call-1","name":"exec","input":"go test ./..."}}`,
-		`{"timestamp":"2026-01-02T03:04:10Z","type":"response_item","payload":{"id":"o1","type":"custom_tool_call_output","call_id":"call-1","output":"ok"}}`,
-	}, "\n")+"\n")
-	writeFixture(t, filepath.Join(home, "session_index.jsonl"), `{"id":"thread-test","thread_name":"CloseView revamp","updated_at":"2026-01-02T03:04:11Z"}`+"\n")
-	writeFixture(t, filepath.Join(home, "history.jsonl"), `{"session_id":"thread-test","text":"Build the viewer","ts":1}`+"\n")
-	writeFixture(t, filepath.Join(rolloutDir, "rollout-child.jsonl"), strings.Join([]string{
-		`{"timestamp":"2026-01-02T03:04:12Z","type":"session_meta","payload":{"id":"thread-child","parent_thread_id":"thread-test","timestamp":"2026-01-02T03:04:12Z","cwd":"/tmp/codex","originator":"Codex","source":{"subagent":{"other":"reviewer"}},"thread_source":"subagent"}}`,
-		`{"timestamp":"2026-01-02T03:04:13Z","type":"response_item","payload":{"id":"u2","type":"message","role":"user","content":[{"type":"input_text","text":"Review the viewer"}]}}`,
-	}, "\n")+"\n")
-
-	adapter := NewCodex(home)
-	sessions, err := adapter.List(context.Background())
-	if err != nil || len(sessions) != 2 {
-		t.Fatalf("list: sessions=%+v err=%v", sessions, err)
-	}
-	parent := nativeSession(t, sessions, "thread-test")
-	child := nativeSession(t, sessions, "thread-child")
-	if parent.Title != "CloseView revamp" || child.ParentThreadID != "thread-test" || child.Agent != "reviewer" {
-		t.Fatalf("unexpected Codex relationship: parent=%+v child=%+v", parent, child)
-	}
-	detail, err := adapter.Get(context.Background(), parent.NativeID)
-	if err != nil || len(detail.Messages) != 2 || len(detail.ToolCalls) != 1 || detail.ToolCalls[0].Output != "ok" {
-		t.Fatalf("get: detail=%+v err=%v", detail, err)
-	}
-	if err := adapter.Delete(context.Background(), parent.NativeID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(rollout); !os.IsNotExist(err) {
-		t.Fatalf("rollout still exists: %v", err)
-	}
-	assertFileDoesNotContain(t, filepath.Join(home, "session_index.jsonl"), "thread-test")
-	assertFileDoesNotContain(t, filepath.Join(home, "history.jsonl"), "thread-test")
-}
-
 func TestClaudeListGetDelete(t *testing.T) {
 	home := t.TempDir()
 	projectDir := filepath.Join(home, "projects", "-tmp-project")

@@ -249,6 +249,7 @@ func runServe(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	defer sessions.Close()
 
 	addr := *host + ":" + *port
 	webURL := "http://" + addr
@@ -272,6 +273,7 @@ func runOpen(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	defer sessions.Close()
 
 	sessionID := ""
 	if fs.NArg() > 0 {
@@ -417,5 +419,5 @@ Usage:
   closeview open [native_session_id]
   closeview serve [--open] [--host 127.0.0.1] [--port 3434]
 
-The web viewer discovers OpenCode, Codex, and Claude sessions directly. Legacy import, list, show, and export commands use CloseView's import database.`)
+The web viewer reads OpenCode and Claude stores directly and uses the Codex app-server. Legacy import, list, show, and export commands use CloseView's import database.`)
 }

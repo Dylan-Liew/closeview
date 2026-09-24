@@ -1,8 +1,9 @@
 # CloseView
 
 CloseView is a local web viewer for OpenCode, Codex, and Claude Code session
-history. It reads native local session stores directly—without invoking an agent
-CLI—and provides two session-level operations: view and delete.
+history. OpenCode and Claude Code stores are read directly; Codex uses its
+official local app-server API for listing, reading, and deletion. CloseView
+provides two session-level operations: view and delete.
 
 OpenCode v2 session and message projections are supported. CloseView still reads
 legacy v1 rows when present so a migrated database remains fully visible, while
@@ -26,11 +27,13 @@ closeview serve --open
 CloseView binds to `127.0.0.1:3434` by default and automatically reads:
 
 - OpenCode: `~/.local/share/opencode/opencode.db`
-- Codex: `$CODEX_HOME/sessions` or `~/.codex/sessions`
+- Codex: the local app-server using `$CODEX_HOME` or `~/.codex`
 - Claude Code: `~/.claude/projects`
 
 Override these locations with `CLOSEVIEW_OPENCODE_DB`,
-`CLOSEVIEW_CODEX_HOME`, or `CLOSEVIEW_CLAUDE_HOME`. For OpenCode v2 deletion,
+`CLOSEVIEW_CODEX_HOME`, or `CLOSEVIEW_CLAUDE_HOME`. Set
+`CLOSEVIEW_CODEX_BIN` when the `codex` executable is not on `PATH`. For OpenCode
+v2 deletion,
 set `CLOSEVIEW_OPENCODE_URL` and either `CLOSEVIEW_OPENCODE_PASSWORD` or
 `CLOSEVIEW_OPENCODE_PASSWORD_FILE`. The password file may be OpenCode v2's
 `~/.local/state/opencode/service.json` registration file.
@@ -48,8 +51,9 @@ CLOSEVIEW_HOST="$(tailscale ip -4)" docker compose up -d --build
 ```
 
 The Compose service mounts the OpenCode, Codex, and Claude session stores plus
-OpenCode v2's service registration file. The session stores are writable because
-confirmed deletion updates the native source; the service registration is read-only.
+OpenCode v2's service registration file. The image pins the Codex 0.156.1
+app-server binary. Session stores are writable because confirmed deletion
+updates the native source; the OpenCode service registration is read-only.
 
 The viewer includes a unified history, nested OpenCode, Codex, and Claude Code
 sub-sessions, source filters, search, stable deep links, structured messages,
@@ -65,6 +69,13 @@ For OpenCode v2, CloseView uses the native v2 session tables and delegates
 deletion to the OpenCode service, which also removes child sessions. Legacy
 v1 rows retained after migration are not listed or used as a fallback.
 A v1-only database continues to use the legacy adapter.
+
+Codex has one adapter: CloseView starts `codex app-server --stdio` and uses
+`thread/list`, `thread/read`, paginated `thread/turns/list` and
+`thread/items/list`, and `thread/delete`. CloseView does not parse Codex rollout
+JSONL itself and does not fall back to the legacy session reader. If the Codex
+app-server cannot start or does not support these methods, the Codex source is
+reported unavailable while the other sources continue to work.
 
 ## Legacy imports
 
