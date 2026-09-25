@@ -31,7 +31,8 @@ CloseView binds to `127.0.0.1:3434` by default and automatically reads:
 - Claude Code: `~/.claude/projects`
 
 Override these locations with `CLOSEVIEW_OPENCODE_DB`,
-`CLOSEVIEW_CODEX_HOME`, or `CLOSEVIEW_CLAUDE_HOME`. Set
+`CLOSEVIEW_OPENCODE_CONFIG_HOME`, `CLOSEVIEW_CODEX_HOME`,
+`CLOSEVIEW_CLAUDE_HOME`, or `CLOSEVIEW_CLAUDE_CONFIG_FILE`. Set
 `CLOSEVIEW_CODEX_BIN` when the `codex` executable is not on `PATH`. For OpenCode
 v2 deletion,
 set `CLOSEVIEW_OPENCODE_URL` and either `CLOSEVIEW_OPENCODE_PASSWORD` or
@@ -51,15 +52,22 @@ CLOSEVIEW_HOST="$(tailscale ip -4)" docker compose up -d --build
 ```
 
 The Compose service mounts the OpenCode, Codex, and Claude session stores plus
-OpenCode v2's service registration file. The image pins the Codex 0.156.1
-app-server binary. Session stores are writable because confirmed deletion
-updates the native source; the OpenCode service registration is read-only.
+OpenCode v2's service registration file. It also read-mounts the OpenCode skill
+directory and MCP config file plus Claude's MCP config file. The image pins the
+Codex 0.156.1 app-server binary. Session stores are writable because confirmed
+deletion updates the native source; configuration and service registrations are
+read-only.
 
 The viewer includes a unified history, nested OpenCode, Codex, and Claude Code
 sub-sessions, source filters, search, stable deep links, structured messages,
 collapsed context and reasoning, tool calls, code, copy controls, prompt
 navigation, and explicit session deletion. Sub-sessions whose parent history is
 no longer available remain accessible in a collapsed detached group.
+
+The Skills view reads local `SKILL.md` libraries for each agent. The MCP view
+reads each agent's native MCP configuration and deliberately returns only
+environment and header key names—credential values never enter the CloseView
+API. Both views are read-only.
 
 Deleting in CloseView permanently removes the selected session from its native
 local store. The UI requires confirmation for every deletion. CloseView never

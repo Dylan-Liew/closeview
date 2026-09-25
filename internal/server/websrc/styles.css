@@ -35,9 +35,13 @@
 
 @layer components {
   .app-shell { display: grid; grid-template-columns: clamp(220px, var(--panel-left, 290px), min(440px, 30vw)) minmax(0, 1fr) clamp(170px, var(--panel-right, 210px), min(360px, 25vw)); height: 100vh; min-height: 0; }
-  .session-sidebar { @apply grid min-h-0 border-r bg-[#0a0a0b]; grid-template-rows: auto auto minmax(0,1fr) auto; }
+  .library-shell { grid-template-columns: clamp(220px, var(--panel-left, 290px), min(440px, 34vw)) minmax(0, 1fr); }
+  .session-sidebar { @apply grid min-h-0 border-r bg-[#0a0a0b]; grid-template-rows: auto auto auto minmax(0,1fr) auto; }
   .brand-row { @apply flex h-[60px] items-center gap-2.5 border-b px-3; }
   .brand-name { @apply text-sm font-semibold tracking-[-.02em]; }
+  .view-tabs { @apply grid grid-cols-3 gap-1 border-b px-2 py-2; }
+  .view-tab { @apply flex h-8 items-center justify-center gap-1.5 rounded-md text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground; }
+  .view-tab.active { @apply bg-secondary text-foreground shadow-sm; }
   .sidebar-controls { @apply space-y-2 border-b p-2; }
   .source-tabs { @apply grid gap-1; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
   .source-tab { @apply flex h-7 items-center justify-center rounded-md text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground; }
@@ -66,6 +70,27 @@
   .source-codex { @apply border-sky-900/60 bg-sky-950/40 text-sky-300; }
   .source-claude { @apply border-orange-900/60 bg-orange-950/40 text-orange-300; }
   .sidebar-empty { @apply grid h-full place-content-center justify-items-center gap-2 text-xs text-muted-foreground; }
+  .library-list { @apply min-h-0 overflow-y-auto p-1.5; }
+  .library-row { @apply mb-1 flex w-full min-w-0 items-start gap-2.5 rounded-md border border-transparent p-2 text-left transition-colors hover:bg-white/[.035]; }
+  .library-row.active { @apply bg-secondary/75; }
+  .library-row-top { @apply flex min-w-0 items-center gap-2; }
+  .library-row-top strong { @apply min-w-0 flex-1 truncate text-[13px] font-medium leading-5; }
+  .library-row-top span { @apply shrink-0 rounded border px-1.5 py-0.5 text-[10px] leading-4 text-muted-foreground; }
+  .library-row p { @apply mt-1 line-clamp-2 text-[11px] leading-4 text-muted-foreground; }
+  .library-content { @apply min-h-0 overflow-y-auto bg-[#070708]; }
+  .library-document { @apply mx-auto w-full max-w-[860px] px-8 py-8 text-sm leading-[1.65] text-foreground/90; }
+  .config-stack { @apply mx-auto w-full max-w-[860px] space-y-4 px-8 py-8; }
+  .config-card { @apply overflow-hidden rounded-lg border bg-white/[.018]; }
+  .config-card-title { @apply border-b bg-secondary/40 px-4 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground; }
+  .config-card dl { @apply divide-y; }
+  .config-term { @apply grid grid-cols-[130px_minmax(0,1fr)] gap-3 px-4 py-3 text-sm; }
+  .config-term dt { @apply text-xs text-muted-foreground; }
+  .config-term dd { @apply min-w-0 break-words; }
+  .config-card pre { @apply overflow-auto whitespace-pre-wrap break-words px-4 py-3 font-mono text-xs leading-5; }
+  .config-chips { @apply flex flex-wrap gap-1.5 px-4 py-3; }
+  .config-chips span { @apply rounded border bg-secondary px-2 py-1 font-mono text-[11px] text-foreground/80; }
+  .config-empty { @apply px-4 py-3 text-xs text-muted-foreground; }
+  .privacy-note { @apply px-1 text-[11px] text-muted-foreground; }
   .session-main { @apply relative grid min-h-0 min-w-0 overflow-hidden bg-[#070708]; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0,1fr); }
   .error-banner { @apply absolute left-1/2 top-3 z-40 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-red-900/60 bg-red-950/90 px-3 py-2 text-xs text-red-200 shadow-xl; }
   .error-banner button { @apply ml-3 underline underline-offset-2; }
@@ -182,7 +207,7 @@ button:focus-visible, summary:focus-visible, [role="button"]:focus-visible { out
 }
 @media (pointer: coarse) {
   .session-header button, .brand-row button, .message-heading button { min-width: 44px; min-height: 44px; }
-  .source-tab, .tool-card summary, .context-card summary, .reasoning-card summary { min-height: 44px; }
+  .source-tab, .view-tab, .tool-card summary, .context-card summary, .reasoning-card summary { min-height: 44px; }
   input { font-size: 16px; }
 }
 @media (max-width: 1180px) {
@@ -225,6 +250,8 @@ button:focus-visible, summary:focus-visible, [role="button"]:focus-visible { out
   .parent-session-link { max-width: 120px; }
   .source-badge, .subsession-badge { display: none; }
   .transcript-inner { width: 100%; max-width: 100%; padding: 1.25rem 1rem 2rem; }
+  .library-document, .config-stack { width: 100%; max-width: 100%; padding: 1.25rem 1rem 2rem; }
+  .config-term { grid-template-columns: minmax(84px, 130px) minmax(0, 1fr); gap: .625rem; }
   .message-card { display: block; margin-bottom: 1.25rem; }
   .message-heading { margin-bottom: .375rem; }
   .message-content { font-size: 14px; line-height: 1.65; }

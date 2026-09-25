@@ -67,3 +67,42 @@ export interface Catalog {
   sessions: Session[]
   sources: SourceStatus[]
 }
+
+export interface Skill {
+  id: string
+  name: string
+  description: string
+  source: SourceName
+  scope: string
+  path: string
+}
+
+export interface SkillCatalog {
+  skills: Skill[]
+  sources: SourceStatus[]
+}
+
+export interface SkillDetail {
+  skill: Skill
+  content: string
+}
+
+export interface MCPServer {
+  id: string
+  name: string
+  source: SourceName
+  configFile: string
+  transport: string
+  command?: string
+  args: string[]
+  url?: string
+  environment: string[]
+  headers: string[]
+  auth?: string
+  disabled: boolean
+}
+
+export interface MCPCatalog {
+  servers: MCPServer[]
+  sources: SourceStatus[]
+}

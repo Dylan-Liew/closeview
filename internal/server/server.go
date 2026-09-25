@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Dylan-Liew/closeview/internal/library"
 	"github.com/Dylan-Liew/closeview/internal/native"
 )
 
@@ -19,19 +20,23 @@ var webFiles embed.FS
 
 type api struct {
 	sessions *native.Manager
+	library  *library.Library
 }
 
-func Serve(ctx context.Context, sessions *native.Manager, addr string) error {
+func Serve(ctx context.Context, sessions *native.Manager, agentLibrary *library.Library, addr string) error {
 	webRoot, err := fs.Sub(webFiles, "web")
 	if err != nil {
 		return err
 	}
-	handler := &api{sessions: sessions}
+	handler := &api{sessions: sessions, library: agentLibrary}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/sessions", handler.listSessions)
 	mux.HandleFunc("GET /api/sessions/", handler.getSession)
 	mux.HandleFunc("DELETE /api/sessions/", handler.deleteSession)
+	mux.HandleFunc("GET /api/skills", handler.listSkills)
+	mux.HandleFunc("GET /api/skills/", handler.getSkill)
+	mux.HandleFunc("GET /api/mcp", handler.listMCP)
 	mux.Handle("/", securityHeaders(http.FileServer(http.FS(webRoot))))
 
 	server := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
@@ -96,6 +101,32 @@ func (a *api) deleteSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *api) listSkills(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, a.library.ListSkills(r.Context()))
+}
+
+func (a *api) getSkill(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimPrefix(r.URL.Path, "/api/skills/")
+	if id == "" {
+		writeError(w, fmt.Errorf("skill id is required"), http.StatusBadRequest)
+		return
+	}
+	skill, err := a.library.GetSkill(r.Context(), id)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, library.ErrNotFound) {
+			status = http.StatusNotFound
+		}
+		writeError(w, err, status)
+		return
+	}
+	writeJSON(w, skill)
+}
+
+func (a *api) listMCP(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, a.library.ListMCP())
 }
 
 func writeJSON(w http.ResponseWriter, value any) {

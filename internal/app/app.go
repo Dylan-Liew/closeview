@@ -15,6 +15,7 @@ import (
 
 	"github.com/Dylan-Liew/closeview/internal/exporter"
 	"github.com/Dylan-Liew/closeview/internal/importer"
+	"github.com/Dylan-Liew/closeview/internal/library"
 	"github.com/Dylan-Liew/closeview/internal/native"
 	"github.com/Dylan-Liew/closeview/internal/selector"
 	"github.com/Dylan-Liew/closeview/internal/server"
@@ -250,6 +251,10 @@ func runServe(ctx context.Context, args []string) error {
 		return err
 	}
 	defer sessions.Close()
+	agentLibrary, err := library.NewDefault()
+	if err != nil {
+		return err
+	}
 
 	addr := *host + ":" + *port
 	webURL := "http://" + addr
@@ -258,7 +263,7 @@ func runServe(ctx context.Context, args []string) error {
 	if *open {
 		openSoon(webURL)
 	}
-	return server.Serve(ctx, sessions, addr)
+	return server.Serve(ctx, sessions, agentLibrary, addr)
 }
 
 func runOpen(ctx context.Context, args []string) error {
@@ -274,6 +279,10 @@ func runOpen(ctx context.Context, args []string) error {
 		return err
 	}
 	defer sessions.Close()
+	agentLibrary, err := library.NewDefault()
+	if err != nil {
+		return err
+	}
 
 	sessionID := ""
 	if fs.NArg() > 0 {
@@ -288,7 +297,7 @@ func runOpen(ctx context.Context, args []string) error {
 	fmt.Printf("Opening %s\n", webURL)
 	warnIfPublicHost(*host)
 	openSoon(webURL)
-	return server.Serve(ctx, sessions, addr)
+	return server.Serve(ctx, sessions, agentLibrary, addr)
 }
 
 func openDB(path string) (*store.DB, error) {

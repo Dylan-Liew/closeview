@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   IconAlertCircle,
-  IconBrandOpenai,
   IconCheck,
   IconChevronDown,
   IconChevronRight,
@@ -33,18 +32,37 @@ import {
   AlertDialogTitle,
 } from './components/ui/alert-dialog'
 import { Tooltip } from './components/ui/tooltip'
-import type { Catalog, Message, Session, SessionDetail, SourceName, ToolCall } from './lib/types'
+import { MCPSidebar, MCPMain, SkillsSidebar, SkillsMain } from './components/library-views'
+import { sourceIcon, sourceLabel } from './lib/source'
+import type { Catalog, MCPCatalog, Message, Session, SessionDetail, SkillCatalog, SourceName, ToolCall } from './lib/types'
 import { cn } from './lib/utils'
 
 const sourceOrder: Array<'all' | SourceName> = ['all', 'opencode', 'codex', 'claude']
+type ViewName = 'sessions' | 'skills' | 'mcp'
+type SourceFilter = 'all' | SourceName
+
+function viewFromURL(value: string | null): ViewName {
+  return value === 'skills' || value === 'mcp' ? value : 'sessions'
+}
 
 export function App() {
+  const [view, setView] = useState<ViewName>(() => viewFromURL(new URLSearchParams(location.search).get('view')))
   const [catalog, setCatalog] = useState<Catalog>({ sessions: [], sources: [] })
   const [activeID, setActiveID] = useState(() => new URLSearchParams(location.search).get('session') ?? '')
   const [detail, setDetail] = useState<SessionDetail | null>(null)
   const [query, setQuery] = useState('')
-  const [source, setSource] = useState<'all' | SourceName>('all')
-  const [loadingCatalog, setLoadingCatalog] = useState(true)
+  const [source, setSource] = useState<SourceFilter>('all')
+  const [skillCatalog, setSkillCatalog] = useState<SkillCatalog>({ skills: [], sources: [] })
+  const [activeSkillID, setActiveSkillID] = useState(() => new URLSearchParams(location.search).get('skill') ?? '')
+  const [skillQuery, setSkillQuery] = useState('')
+  const [skillSource, setSkillSource] = useState<SourceFilter>('all')
+  const [mcpCatalog, setMCPCatalog] = useState<MCPCatalog>({ servers: [], sources: [] })
+  const [activeMCPID, setActiveMCPID] = useState(() => new URLSearchParams(location.search).get('mcp') ?? '')
+  const [mcpQuery, setMCPQuery] = useState('')
+  const [mcpSource, setMCPSource] = useState<SourceFilter>('all')
+  const [loadingCatalog, setLoadingCatalog] = useState(view === 'sessions')
+  const [loadingSkills, setLoadingSkills] = useState(view === 'skills')
+  const [loadingMCP, setLoadingMCP] = useState(view === 'mcp')
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -73,11 +91,52 @@ export function App() {
     }
   }, [])
 
-  useEffect(() => { void loadCatalog() }, [loadCatalog])
+  const loadSkills = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true)
+    else setLoadingSkills(true)
+    try {
+      const response = await fetch('/api/skills', { cache: 'no-store' })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Could not load skills')
+      const skills = data.skills ?? []
+      setSkillCatalog({ skills, sources: data.sources ?? [] })
+      setActiveSkillID(current => skills.some((skill: { id: string }) => skill.id === current) ? current : skills[0]?.id || '')
+      setError('')
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not load skills')
+    } finally {
+      setLoadingSkills(false)
+      setRefreshing(false)
+    }
+  }, [])
+
+  const loadMCP = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true)
+    else setLoadingMCP(true)
+    try {
+      const response = await fetch('/api/mcp', { cache: 'no-store' })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Could not load MCP servers')
+      const servers = data.servers ?? []
+      setMCPCatalog({ servers, sources: data.sources ?? [] })
+      setActiveMCPID(current => servers.some((server: { id: string }) => server.id === current) ? current : servers[0]?.id || '')
+      setError('')
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not load MCP servers')
+    } finally {
+      setLoadingMCP(false)
+      setRefreshing(false)
+    }
+  }, [])
+
+  useEffect(() => { if (view === 'sessions') void loadCatalog() }, [loadCatalog, view])
+  useEffect(() => { if (view === 'skills') void loadSkills() }, [loadSkills, view])
+  useEffect(() => { if (view === 'mcp') void loadMCP() }, [loadMCP, view])
 
   useEffect(() => {
-    if (!activeID) {
+    if (view !== 'sessions' || !activeID) {
       setDetail(null)
+      if (view !== 'sessions') setLoadingDetail(false)
       return
     }
     const controller = new AbortController()
@@ -101,7 +160,7 @@ export function App() {
       })
       .finally(() => { if (!controller.signal.aborted) setLoadingDetail(false) })
     return () => controller.abort()
-  }, [activeID, detailRevision])
+  }, [activeID, detailRevision, view])
 
   const visibleSessionForest = useMemo(() => {
     const normalized = query.trim().toLowerCase()
@@ -118,7 +177,24 @@ export function App() {
     claude: catalog.sessions.filter(session => session.source === 'claude').length,
   }), [catalog.sessions])
   const visibleSourceTabs = sourceOrder.filter(item => item === 'all' || sourceCounts[item] > 0)
-  const sourceErrors = catalog.sources.filter(source => !source.available && source.error)
+  const visibleSkills = useMemo(() => {
+    const term = skillQuery.trim().toLowerCase()
+    return skillCatalog.skills.filter(skill => {
+      if (skillSource !== 'all' && skill.source !== skillSource) return false
+      if (!term) return true
+      return [skill.name, skill.description, skill.path, skill.scope].join('\n').toLowerCase().includes(term)
+    })
+  }, [skillCatalog.skills, skillQuery, skillSource])
+  const visibleMCPServers = useMemo(() => {
+    const term = mcpQuery.trim().toLowerCase()
+    return mcpCatalog.servers.filter(server => {
+      if (mcpSource !== 'all' && server.source !== mcpSource) return false
+      if (!term) return true
+      return [server.name, server.transport, server.command ?? '', server.url ?? '', ...server.args, ...server.environment, ...server.headers].join('\n').toLowerCase().includes(term)
+    })
+  }, [mcpCatalog.servers, mcpQuery, mcpSource])
+  const activeSourceErrors = (view === 'skills' ? skillCatalog.sources : view === 'mcp' ? mcpCatalog.sources : catalog.sources)
+    .filter(source => !source.available && source.error)
 
   useEffect(() => {
     if (source !== 'all' && sourceCounts[source] === 0) setSource('all')
@@ -169,8 +245,62 @@ export function App() {
     }
   }
 
+  function selectView(next: ViewName) {
+    setView(next)
+    setMobilePickerOpen(false)
+    const url = new URL(location.href)
+    url.searchParams.set('view', next)
+    url.searchParams.delete('session')
+    url.searchParams.delete('skill')
+    url.searchParams.delete('mcp')
+    if (next === 'sessions' && activeID) url.searchParams.set('session', activeID)
+    if (next === 'skills' && activeSkillID) url.searchParams.set('skill', activeSkillID)
+    if (next === 'mcp' && activeMCPID) url.searchParams.set('mcp', activeMCPID)
+    history.replaceState(null, '', url)
+  }
+
+  function selectSession(id: string) {
+    setView('sessions')
+    setActiveID(id)
+    setMobilePickerOpen(false)
+    const url = new URL(location.href)
+    url.searchParams.set('view', 'sessions')
+    url.searchParams.set('session', id)
+    url.searchParams.delete('skill')
+    url.searchParams.delete('mcp')
+    history.replaceState(null, '', url)
+  }
+
+  function selectSkill(id: string) {
+    setActiveSkillID(id)
+    setMobilePickerOpen(false)
+    const url = new URL(location.href)
+    url.searchParams.set('view', 'skills')
+    url.searchParams.set('skill', id)
+    url.searchParams.delete('session')
+    url.searchParams.delete('mcp')
+    history.replaceState(null, '', url)
+  }
+
+  function selectMCP(id: string) {
+    setActiveMCPID(id)
+    setMobilePickerOpen(false)
+    const url = new URL(location.href)
+    url.searchParams.set('view', 'mcp')
+    url.searchParams.set('mcp', id)
+    url.searchParams.delete('session')
+    url.searchParams.delete('skill')
+    history.replaceState(null, '', url)
+  }
+
+  function refreshActiveView() {
+    if (view === 'skills') void loadSkills(true)
+    else if (view === 'mcp') void loadMCP(true)
+    else void loadCatalog(true)
+  }
+
   return (
-    <div className={cn('app-shell', mobilePickerOpen && 'mobile-picker-open')}>
+    <div className={cn('app-shell', view !== 'sessions' && 'library-shell', mobilePickerOpen && 'mobile-picker-open')}>
       <aside id="sessions-panel" className={cn('session-sidebar', mobilePickerOpen ? 'mobile-open' : 'mobile-collapsed')}>
         <PanelResize side="left" />
         <div className="brand-row">
@@ -179,34 +309,88 @@ export function App() {
             <path d="M13.5 14h5M13.5 18h3.5" />
           </svg>
           <div className="brand-name">CloseView</div>
-          <Tooltip label="Refresh local sessions">
-            <Button aria-label="Refresh local sessions" size="icon" variant="ghost" className="ml-auto size-8" onClick={() => void loadCatalog(true)} disabled={refreshing}>
+          <Tooltip label={view === 'skills' ? 'Refresh skills' : view === 'mcp' ? 'Refresh MCP servers' : 'Refresh local sessions'}>
+            <Button aria-label={view === 'skills' ? 'Refresh skills' : view === 'mcp' ? 'Refresh MCP servers' : 'Refresh local sessions'} size="icon" variant="ghost" className="ml-auto size-8" onClick={refreshActiveView} disabled={refreshing}>
               <IconRefresh size={16} className={cn(refreshing && 'animate-spin')} />
             </Button>
           </Tooltip>
-          {activeID && (
-            <Button aria-label="Close session picker" size="icon" variant="ghost" className="mobile-picker-close size-8" onClick={() => setMobilePickerOpen(false)}>
+          {(activeID || view !== 'sessions') && (
+            <Button aria-label="Close navigation" size="icon" variant="ghost" className="mobile-picker-close size-8" onClick={() => setMobilePickerOpen(false)}>
               <IconX size={16} />
             </Button>
           )}
         </div>
 
+        <div className="view-tabs" role="tablist" aria-label="CloseView view">
+          {(['sessions', 'skills', 'mcp'] as const).map(item => (
+            <button
+              key={item}
+              role="tab"
+              aria-selected={view === item}
+              className={cn('view-tab', view === item && 'active')}
+              onClick={() => selectView(item)}
+            >
+              {item === 'sessions' ? <IconMessageCircle size={13} /> : item === 'skills' ? <IconSparkles size={13} /> : <IconTerminal2 size={13} />}
+              {item === 'sessions' ? 'Sessions' : item === 'skills' ? 'Skills' : 'MCP'}
+            </button>
+          ))}
+        </div>
+
         <div className="sidebar-controls">
           <div className="relative">
             <IconSearch className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" size={15} />
-            <Input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search sessions" className="pl-8" />
+            <Input
+              value={view === 'sessions' ? query : view === 'skills' ? skillQuery : mcpQuery}
+              onChange={event => {
+                const value = event.target.value
+                if (view === 'sessions') setQuery(value)
+                else if (view === 'skills') setSkillQuery(value)
+                else setMCPQuery(value)
+              }}
+              placeholder={view === 'sessions' ? 'Search sessions' : view === 'skills' ? 'Search skills' : 'Search MCP servers'}
+              className="pl-8"
+            />
           </div>
-          <div className="source-tabs" role="tablist" aria-label="Session source">
-            {visibleSourceTabs.map(item => (
-              <button key={item} role="tab" aria-selected={source === item} className={cn('source-tab', source === item && 'active')} onClick={() => setSource(item)}>
-                {item === 'all' ? 'All' : sourceLabel(item)}
-              </button>
-            ))}
+          <div className="source-tabs" role="tablist" aria-label={view === 'sessions' ? 'Session source' : 'Library source'}>
+            {(view === 'sessions' ? visibleSourceTabs : sourceOrder).map(item => {
+              const active = view === 'sessions' ? source : view === 'skills' ? skillSource : mcpSource
+              return (
+                <button
+                  key={item}
+                  role="tab"
+                  aria-selected={active === item}
+                  className={cn('source-tab', active === item && 'active')}
+                  onClick={() => {
+                    if (view === 'sessions') setSource(item)
+                    else if (view === 'skills') setSkillSource(item)
+                    else setMCPSource(item)
+                  }}
+                >
+                  {item === 'all' ? 'All' : sourceLabel(item)}
+                </button>
+              )
+            })}
           </div>
         </div>
 
         <div className="session-list">
-          {loadingCatalog ? <SessionListSkeleton /> : visibleSessionForest.roots.length || visibleSessionForest.detached.length ? <>
+          {view === 'skills' ? (
+            <SkillsSidebar
+              catalog={{ ...skillCatalog, skills: visibleSkills }}
+              activeID={activeSkillID}
+              loading={loadingSkills}
+              filtered={Boolean(skillQuery.trim()) || skillSource !== 'all'}
+              onSelect={selectSkill}
+            />
+          ) : view === 'mcp' ? (
+            <MCPSidebar
+              catalog={{ ...mcpCatalog, servers: visibleMCPServers }}
+              activeID={activeMCPID}
+              loading={loadingMCP}
+              filtered={Boolean(mcpQuery.trim()) || mcpSource !== 'all'}
+              onSelect={selectMCP}
+            />
+          ) : loadingCatalog ? <SessionListSkeleton /> : visibleSessionForest.roots.length || visibleSessionForest.detached.length ? <>
             {visibleSessionForest.roots.map(node => (
               <SessionTree
                 key={node.session.id}
@@ -215,7 +399,7 @@ export function App() {
                 expanded={expandedSessions}
                 forceExpanded={Boolean(query.trim())}
                 onToggle={toggleExpanded(setExpandedSessions)}
-                onSelect={id => { setActiveID(id); setMobilePickerOpen(false) }}
+                onSelect={selectSession}
               />
             ))}
             {visibleSessionForest.detached.length > 0 && (
@@ -225,7 +409,7 @@ export function App() {
                 expanded={expandedSessions}
                 forceExpanded={Boolean(query.trim())}
                 onToggle={toggleExpanded(setExpandedSessions)}
-                onSelect={id => { setActiveID(id); setMobilePickerOpen(false) }}
+                onSelect={selectSession}
               />
             )}
           </> : (
@@ -245,19 +429,23 @@ export function App() {
       />
 
       <main className="session-main">
-        {sourceErrors.map(source => (
+        {activeSourceErrors.map(source => (
           <div key={source.name} className="error-banner"><IconAlertCircle size={16} /><span>{sourceLabel(source.name)} unavailable: {source.error}</span></div>
         ))}
         {error && (
           <div className="error-banner"><IconAlertCircle size={16} /><span>{error}</span><button onClick={() => setError('')}>Dismiss</button></div>
         )}
-        {loadingDetail ? <DetailSkeleton /> : detail ? (
+        {view === 'skills' ? (
+          <SkillsMain skillID={activeSkillID} onOpenNav={() => setMobilePickerOpen(true)} />
+        ) : view === 'mcp' ? (
+          <MCPMain catalog={mcpCatalog} activeID={activeMCPID} onOpenNav={() => setMobilePickerOpen(true)} />
+        ) : loadingDetail ? <DetailSkeleton /> : detail ? (
           <>
             <SessionHeader
               session={detail.session}
               parent={catalog.sessions.find(session => session.id === detail.session.parentId)}
               onOpenNav={() => setMobilePickerOpen(true)}
-              onSelectParent={id => setActiveID(id)}
+              onSelectParent={selectSession}
               onDelete={() => setDeleteOpen(true)}
             />
             <Transcript key={detail.session.id} detail={detail} />
@@ -271,18 +459,20 @@ export function App() {
         )}
       </main>
 
-      <aside id="prompts-panel" className="outline-panel">
-        <PanelResize side="right" />
-        <div className="outline-title">Prompts</div>
-        <div className="outline-list">
-          {(detail?.messages ?? []).filter(message => message.role === 'user' && message.content.trim()).map(message => (
-            <button key={message.id} title={message.content} onClick={() => document.getElementById(message.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
-              <strong>{firstLine(message.content)}</strong>
-            </button>
-          ))}
-          {detail && !detail.messages.some(message => message.role === 'user') && <p>No user prompts.</p>}
-        </div>
-      </aside>
+      {view === 'sessions' && (
+        <aside id="prompts-panel" className="outline-panel">
+          <PanelResize side="right" />
+          <div className="outline-title">Prompts</div>
+          <div className="outline-list">
+            {(detail?.messages ?? []).filter(message => message.role === 'user' && message.content.trim()).map(message => (
+              <button key={message.id} title={message.content} onClick={() => document.getElementById(message.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+                <strong>{firstLine(message.content)}</strong>
+              </button>
+            ))}
+            {detail && !detail.messages.some(message => message.role === 'user') && <p>No user prompts.</p>}
+          </div>
+        </aside>
+      )}
 
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
@@ -682,12 +872,6 @@ function DetailSkeleton() {
   return <div className="p-6"><div className="mb-10 flex gap-3"><Skeleton className="size-9" /><div className="space-y-2"><Skeleton className="h-5 w-64" /><Skeleton className="h-3 w-96" /></div></div><div className="mx-auto max-w-3xl space-y-6">{Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className={cn('h-28', index % 2 && 'ml-20')} />)}</div></div>
 }
 
-function sourceIcon(source: SourceName, size: number) {
-  if (source === 'codex') return <IconBrandOpenai size={size} />
-  if (source === 'claude') return <IconSparkles size={size} />
-  return <IconCode size={size} />
-}
-function sourceLabel(source: string) { return source === 'opencode' ? 'OpenCode' : source === 'codex' ? 'Codex' : source === 'claude' ? 'Claude' : source }
 function roleLabel(role: string) { return role === 'user' ? 'You' : role === 'assistant' ? 'Assistant' : role === 'system' ? 'Context' : role === 'tool' ? 'Tool' : role || 'Message' }
 function firstLine(value: string) { return value.trim().split('\n').find(Boolean)?.slice(0, 90) || 'Prompt' }
 function formatNumber(value: number) { return new Intl.NumberFormat().format(value) }
