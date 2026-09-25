@@ -175,8 +175,8 @@ export function App() {
         <PanelResize side="left" />
         <div className="brand-row">
           <svg width={28} height={28} viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0">
-            <circle cx={14} cy={14} r={9.5} />
-            <path d="m21 21 6.5 6.5M11.5 12h5M11.5 16h3.5" />
+            <circle cx={16} cy={16} r={11.5} />
+            <path d="M13.5 14h5M13.5 18h3.5" />
           </svg>
           <div className="brand-name">CloseView</div>
           <Tooltip label="Refresh local sessions">
