@@ -1,6 +1,7 @@
 package server
 
 import (
+	"compress/gzip"
 	"context"
 	"embed"
 	"encoding/json"
@@ -8,7 +9,9 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Dylan-Liew/closeview/internal/library"
@@ -61,7 +64,7 @@ func Serve(ctx context.Context, sessions *native.Manager, agentLibrary *library.
 }
 
 func (a *api) listSessions(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, a.sessions.List(r.Context(), r.URL.Query().Get("search"), r.URL.Query().Get("source")))
+	writeJSON(w, r, a.sessions.List(r.Context(), r.URL.Query().Get("search"), r.URL.Query().Get("source")))
 }
 
 func (a *api) getSession(w http.ResponseWriter, r *http.Request) {
@@ -79,7 +82,7 @@ func (a *api) getSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err, status)
 		return
 	}
-	writeJSON(w, detail)
+	writeJSON(w, r, detail)
 }
 
 func (a *api) deleteSession(w http.ResponseWriter, r *http.Request) {
@@ -104,7 +107,7 @@ func (a *api) deleteSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *api) listSkills(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, a.library.ListSkills(r.Context()))
+	writeJSON(w, r, a.library.ListSkills(r.Context()))
 }
 
 func (a *api) getSkill(w http.ResponseWriter, r *http.Request) {
@@ -122,20 +125,63 @@ func (a *api) getSkill(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err, status)
 		return
 	}
-	writeJSON(w, skill)
+	writeJSON(w, r, skill)
 }
 
-func (a *api) listMCP(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, a.library.ListMCP())
+func (a *api) listMCP(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, r, a.library.ListMCP())
 }
 
-func writeJSON(w http.ResponseWriter, value any) {
+var gzipWriters = sync.Pool{
+	New: func() any { return gzip.NewWriter(nil) },
+}
+
+func writeJSON(w http.ResponseWriter, r *http.Request, value any) {
 	w.Header().Set("cache-control", "no-store")
 	w.Header().Set("content-type", "application/json")
-	_ = json.NewEncoder(w).Encode(value)
+	w.Header().Set("vary", "Accept-Encoding")
+
+	if !acceptsGzip(r.Header.Get("Accept-Encoding")) {
+		_ = json.NewEncoder(w).Encode(value)
+		return
+	}
+
+	w.Header().Set("content-encoding", "gzip")
+	writer := gzipWriters.Get().(*gzip.Writer)
+	defer gzipWriters.Put(writer)
+	writer.Reset(w)
+	if err := json.NewEncoder(writer).Encode(value); err != nil {
+		_ = writer.Close()
+		return
+	}
+	_ = writer.Close()
+}
+
+func acceptsGzip(header string) bool {
+	for _, part := range strings.Split(header, ",") {
+		coding, params, _ := strings.Cut(strings.TrimSpace(part), ";")
+		if !strings.EqualFold(coding, "gzip") && coding != "*" {
+			continue
+		}
+		quality := 1.0
+		for _, parameter := range strings.Split(params, ";") {
+			key, value, found := strings.Cut(strings.TrimSpace(parameter), "=")
+			if found && strings.EqualFold(key, "q") {
+				if parsed, err := strconv.ParseFloat(value, 64); err == nil {
+					quality = parsed
+				}
+			}
+		}
+		if quality > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func writeError(w http.ResponseWriter, err error, status int) {
+	w.Header().Set("cache-control", "no-store")
+	w.Header().Set("vary", "Accept-Encoding")
 	w.Header().Set("content-type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -146,6 +192,11 @@ func securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("content-security-policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; font-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
 		w.Header().Set("referrer-policy", "no-referrer")
 		w.Header().Set("x-content-type-options", "nosniff")
+		if strings.HasPrefix(r.URL.Path, "/assets/") {
+			w.Header().Set("cache-control", "public, max-age=31536000, immutable")
+		} else {
+			w.Header().Set("cache-control", "no-cache")
+		}
 		next.ServeHTTP(w, r)
 	})
 }
