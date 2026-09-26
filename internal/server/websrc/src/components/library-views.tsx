@@ -100,18 +100,23 @@ export function SkillsMain({ skillID, onOpenNav }: {
   const skill = detail.skill
   return (
     <>
-      <LibraryHeader onOpenNav={onOpenNav}>
-        <h1 title={skill.name}>{skill.name}</h1>
-        <div className="header-meta">
-          <span>{sourceLabel(skill.source)}</span>
-          <i />
-          <span title={skill.path}>{skill.scope} · {skill.path}</span>
-        </div>
-        <Badge variant="outline" className={cn('source-badge', `source-${skill.source}`)}>
+      <LibraryHeader
+        onOpenNav={onOpenNav}
+        info={<>
+          <div className="header-title-row">
+            <h1 title={skill.name}>{skill.name}</h1>
+          </div>
+          <div className="header-meta">
+            <span>{sourceLabel(skill.source)}</span>
+            <i />
+            <span title={skill.path}>{skill.scope} · {skill.path}</span>
+          </div>
+        </>}
+        action={<Badge variant="outline" className={cn('source-badge', `source-${skill.source}`)}>
           {sourceIcon(skill.source, 12)}
           {sourceLabel(skill.source)}
-        </Badge>
-      </LibraryHeader>
+        </Badge>}
+      />
       <div className="library-content">
         <div className="library-document markdown-content">
           <MarkdownContent text={detail.content || 'This skill has no additional instructions.'} />
@@ -177,18 +182,23 @@ export function MCPMain({ catalog, activeID, onOpenNav }: {
 
   return (
     <>
-      <LibraryHeader onOpenNav={onOpenNav}>
-        <h1 title={server.name}>{server.name}</h1>
-        <div className="header-meta">
-          <span>{sourceLabel(server.source)}</span>
-          <i />
-          <span>{server.configFile}</span>
-        </div>
-        <Badge variant="outline" className={cn('source-badge', `source-${server.source}`)}>
+      <LibraryHeader
+        onOpenNav={onOpenNav}
+        info={<>
+          <div className="header-title-row">
+            <h1 title={server.name}>{server.name}</h1>
+          </div>
+          <div className="header-meta">
+            <span>{sourceLabel(server.source)}</span>
+            <i />
+            <span>{server.configFile}</span>
+          </div>
+        </>}
+        action={<Badge variant="outline" className={cn('source-badge', `source-${server.source}`)}>
           {sourceIcon(server.source, 12)}
           {sourceLabel(server.source)}
-        </Badge>
-      </LibraryHeader>
+        </Badge>}
+      />
       <div className="library-content">
         <div className="config-stack">
           <section className="config-card">
@@ -225,16 +235,18 @@ export function MCPMain({ catalog, activeID, onOpenNav }: {
   )
 }
 
-function LibraryHeader({ onOpenNav, children }: {
+function LibraryHeader({ onOpenNav, info, action }: {
   onOpenNav: () => void
-  children: ReactNode
+  info: ReactNode
+  action?: ReactNode
 }) {
   return (
     <header className="session-header">
       <Button aria-label="Open library navigation" variant="ghost" size="icon" className="mobile-session-menu" onClick={onOpenNav}>
         <IconMenu2 size={19} />
       </Button>
-      <div className="session-header-info">{children}</div>
+      <div className="session-header-info">{info}</div>
+      {action && <div className="header-actions">{action}</div>}
     </header>
   )
 }
