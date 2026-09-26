@@ -61,6 +61,7 @@ export interface SourceStatus {
   available: boolean
   count: number
   error?: string
+  warning?: string
 }
 
 export interface Catalog {
