@@ -142,13 +142,21 @@ func (a *codexAdapter) Get(ctx context.Context, nativeID string) (Detail, error)
 	if turnsErr != nil && ctx.Err() != nil {
 		return Detail{}, turnsErr
 	}
-	items, err := a.listItems(ctx, nativeID)
-	if err != nil {
-		return Detail{}, err
+	items, itemsErr := a.listItems(ctx, nativeID)
+	if itemsErr != nil {
+		if codexIsNotFound(itemsErr) {
+			return Detail{}, ErrNotFound
+		}
+		if ctx.Err() != nil {
+			return Detail{}, itemsErr
+		}
 	}
 	detail := codexDetail(read.Thread, turns, items)
 	if turnsErr != nil {
 		addCodexWarning(&detail, "Codex turn metadata was unavailable; message timestamps may be missing")
+	}
+	if itemsErr != nil {
+		addCodexWarning(&detail, "Some Codex history items were unavailable")
 	}
 	return detail, nil
 }

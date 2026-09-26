@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -13,6 +14,11 @@ import (
 )
 
 var ErrNotFound = errors.New("library item not found")
+
+const (
+	skillMetadataLimit = 64 * 1024
+	skillDetailLimit   = 2 * 1024 * 1024
+)
 
 type Skill struct {
 	ID          string `json:"id"`
@@ -38,11 +44,15 @@ type skillRoot struct {
 	path   string
 }
 
-func (l *Library) ListSkills(context.Context) SkillCatalog {
+func (l *Library) ListSkills(ctx context.Context) SkillCatalog {
 	catalog := SkillCatalog{Skills: []Skill{}, Sources: []SourceStatus{}}
 	for _, root := range l.skillRoots {
-		skills, err := skillsUnder(root)
-		status := SourceStatus{Name: root.source, Available: err == nil, Count: len(skills)}
+		if err := ctx.Err(); err != nil {
+			catalog.Sources = append(catalog.Sources, SourceStatus{Name: root.source, Error: err.Error()})
+			continue
+		}
+		skills, warning, err := skillsUnder(ctx, root)
+		status := SourceStatus{Name: root.source, Available: err == nil, Count: len(skills), Warning: warning}
 		if err != nil {
 			status.Error = err.Error()
 		}
@@ -61,8 +71,11 @@ func (l *Library) ListSkills(context.Context) SkillCatalog {
 	return catalog
 }
 
-func (l *Library) GetSkill(_ context.Context, id string) (SkillDetail, error) {
-	catalog := l.ListSkills(context.Background())
+func (l *Library) GetSkill(ctx context.Context, id string) (SkillDetail, error) {
+	catalog := l.ListSkills(ctx)
+	if err := ctx.Err(); err != nil {
+		return SkillDetail{}, err
+	}
 	for _, skill := range catalog.Skills {
 		if skill.ID != id {
 			continue
@@ -72,7 +85,7 @@ func (l *Library) GetSkill(_ context.Context, id string) (SkillDetail, error) {
 			return SkillDetail{}, ErrNotFound
 		}
 		path := filepath.Join(root.path, filepath.FromSlash(skill.Path), "SKILL.md")
-		content, err := os.ReadFile(path)
+		content, err := readSkillFile(path, skillDetailLimit)
 		if err != nil {
 			if os.IsNotExist(err) {
 				return SkillDetail{}, ErrNotFound
@@ -94,32 +107,33 @@ func (l *Library) skillRootFor(source string) *skillRoot {
 	return nil
 }
 
-func skillsUnder(root skillRoot) ([]Skill, error) {
+func skillsUnder(ctx context.Context, root skillRoot) ([]Skill, string, error) {
 	if _, err := os.Stat(root.path); err != nil {
 		if os.IsNotExist(err) {
-			return []Skill{}, nil
+			return []Skill{}, "", nil
 		}
-		return nil, err
+		return nil, "", err
 	}
 
 	skills := make([]Skill, 0)
-	var walkError error
+	skipped := 0
 	err := filepath.WalkDir(root.path, func(path string, entry os.DirEntry, err error) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if err != nil {
-			walkError = err
-			return nil
+			return err
 		}
 		if entry.IsDir() || entry.Name() != "SKILL.md" {
 			return nil
 		}
 		relative, err := filepath.Rel(root.path, filepath.Dir(path))
 		if err != nil {
-			walkError = err
-			return nil
+			return err
 		}
-		content, err := os.ReadFile(path)
+		content, err := readSkillPrefix(path, skillMetadataLimit)
 		if err != nil {
-			walkError = err
+			skipped++
 			return nil
 		}
 		frontmatter, _ := parseSkillFrontmatter(string(content))
@@ -139,12 +153,45 @@ func skillsUnder(root skillRoot) ([]Skill, error) {
 		return nil
 	})
 	if err != nil {
+		return nil, "", err
+	}
+	warning := ""
+	if skipped > 0 {
+		warning = fmt.Sprintf("Skipped %d unreadable skill %s", skipped, plural(skipped, "file", "files"))
+	}
+	return skills, warning, nil
+}
+
+func plural(count int, singular, pluralValue string) string {
+	if count == 1 {
+		return singular
+	}
+	return pluralValue
+}
+
+func readSkillPrefix(path string, limit int64) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
 		return nil, err
 	}
-	if walkError != nil {
-		return nil, walkError
+	defer file.Close()
+	return io.ReadAll(io.LimitReader(file, limit))
+}
+
+func readSkillFile(path string, limit int64) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
 	}
-	return skills, nil
+	defer file.Close()
+	content, err := io.ReadAll(io.LimitReader(file, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(content)) > limit {
+		return nil, fmt.Errorf("exceeds %d byte limit", limit)
+	}
+	return content, nil
 }
 
 func parseSkillFrontmatter(content string) (map[string]string, string) {

@@ -21,6 +21,7 @@ type SourceStatus struct {
 	Available bool   `json:"available"`
 	Count     int    `json:"count"`
 	Error     string `json:"error,omitempty"`
+	Warning   string `json:"warning,omitempty"`
 }
 
 func NewDefault() (*Library, error) {
